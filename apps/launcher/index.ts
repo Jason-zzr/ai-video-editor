@@ -4,11 +4,13 @@ import { claimInstance } from "../host/instance.ts";
 import { startHost } from "../host/server.ts";
 
 async function launch() {
-  const instance = await claimInstance(await machineDirectory());
+  const dist = fileURLToPath(new URL("../../dist/", import.meta.url));
+  const directory = await machineDirectory();
+  const instance = await claimInstance(directory);
   if (!instance) return;
   let host: Awaited<ReturnType<typeof startHost>>;
   try {
-    host = await startHost({ ...instance, dist: fileURLToPath(new URL("../../dist/", import.meta.url)), openBrowser });
+    host = await startHost({ ...instance, dist, openBrowser, machineDirectory: directory });
   } catch (error) {
     try { await instance.release(); }
     catch (cleanupError) {

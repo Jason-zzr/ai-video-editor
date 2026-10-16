@@ -2,6 +2,7 @@ import { concatenateAudioBlobs, decodeWaveform, extractAudioFromVideo } from "./
 import { isExportAbortError, throwIfExportAborted } from "./exportCancellation.js";
 import { getVisualSegmentTimeline } from "./timeline.js";
 import { remuxEmbeddedAudio } from "./embeddedAudioRemux.js";
+import { loadProjectMediaBlob } from "./projectSnapshot.js";
 
 const getAssetKey = (segment) => segment?.assetId || segment?.src || segment?.id || "";
 
@@ -49,11 +50,8 @@ export async function prepareEmbeddedVideoAudio(visualSegments = [], onProgress,
       phaseParams: { current: index + 1, total: uniqueAssets.length },
     });
     try {
-      const sourceBlob = segment.blob instanceof Blob
-        ? segment.blob
-        : segment.src
-          ? await fetch(segment.src, { signal }).then((response) => {
-              if (!response.ok) throw new Error(`无法读取视频素材：${response.status}`);
+      const sourceBlob = await loadProjectMediaBlob(segment, "blob", signal);
+      if (!response.ok) throw new Error(`无法读取视频素材：${response.status}`);
               return response.blob();
             })
           : null;
@@ -69,8 +67,8 @@ export async function prepareEmbeddedVideoAudio(visualSegments = [], onProgress,
           continue;
         }
       }
-      const blob = segment.compatibilityAudioBlob instanceof Blob
-        ? segment.compatibilityAudioBlob
+      const blob = segment.compatibilityAudioBlob instanceof Blob || segment.projectMedia?.bindings?.compatibilityAudioBlob
+        ? await loadProjectMediaBlob(segment, "compatibilityAudioBlob", signal)
         : await extractAudioFromVideo(sourceBlob, segment.name || "source-video.mp4");
       throwIfExportAborted(signal);
       const decoded = await decodeWaveform(blob, 24);
@@ -78,6 +76,7 @@ export async function prepareEmbeddedVideoAudio(visualSegments = [], onProgress,
       if (decoded.duration > 0) extracted.push({ key, blob, duration: decoded.duration });
     } catch (error) {
       if (isExportAbortError(error)) throw error;
+      if (segment.projectMedia) throw error;
       console.warn("Embedded video audio extraction skipped", segment.name || segment.id, error);
     }
   }
