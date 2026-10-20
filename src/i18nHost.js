@@ -376,6 +376,17 @@ const COMPLETED_COPY = {
 };
 for (const [language, [closed, created]] of Object.entries(COMPLETED_COPY)) Object.assign(COPY[language], { closed, created });
 
+const IMPORT_BOUND_COPY = {
+  zh: "请先关闭当前本地工程，再导入便携工程。", en: "Close the local project before importing a portable project.",
+  ja: "ローカルプロジェクトを閉じてからポータブルプロジェクトを読み込んでください。", ko: "로컬 프로젝트를 닫은 뒤 휴대용 프로젝트를 가져오세요.",
+  es: "Cierra el proyecto local antes de importar un proyecto portátil.", fr: "Fermez le projet local avant d’importer un projet portable.",
+  de: "Schließen Sie das lokale Projekt vor dem Import eines portablen Projekts.", pt: "Feche o projeto local antes de importar um projeto portátil.",
+  it: "Chiudi il progetto locale prima di importare un progetto portatile.", id: "Tutup proyek lokal sebelum mengimpor proyek portabel.",
+  ru: "Закройте локальный проект перед импортом переносимого проекта.", th: "ปิดโปรเจกต์ในเครื่องก่อนนำเข้าโปรเจกต์แบบพกพา",
+  vi: "Đóng dự án cục bộ trước khi nhập dự án di động.",
+};
+for (const [language, importBound] of Object.entries(IMPORT_BOUND_COPY)) COPY[language].importBound = importBound;
+
 export function hostText(language, key) {
   return (COPY[language] || COPY[String(language).split("-")[0]] || COPY.en)[key] || COPY.en[key] || key;
 }

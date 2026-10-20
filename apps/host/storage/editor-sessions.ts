@@ -47,7 +47,13 @@ export function createEditorSessions() {
       if (session.projectId !== projectId || session.mode !== "write") throw new HostError("WRITE_SESSION_REQUIRED", 409, "A current writable editor session is required.");
       return { ...session };
     },
-    release(page: PageSession, id: string) { authenticate(page, id); sessions.delete(id); },
+    release(page: PageSession, id: string) {
+      prune();
+      const session = sessions.get(id);
+      if (!session) return;
+      if (session.pageSessionId !== page.pageSessionId) throw new HostError("AUTH_REQUIRED", 403, "The lease belongs to another page.");
+      sessions.delete(id);
+    },
     writable(page: PageSession) {
       prune();
       return [...sessions.values()].filter(session => session.pageSessionId === page.pageSessionId && session.mode === "write").map(session => ({ ...session }));

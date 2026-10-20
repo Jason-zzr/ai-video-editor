@@ -14,8 +14,8 @@ const rootMedia = {
   imageRef: ["imageBlob", "imageSrc"], audioRef: ["audioBlob", "audioUrl"],
   musicRef: ["musicBlob", "musicUrl"], sourceAudioRef: ["sourceAudioBlob", "sourceAudioUrl"],
 };
-const mediaFields = new Set(["blob", "src", "url", "previewSrc", "originalBlob", "originalSrc", "thumbnail", "compatibilityAudioBlob", "voiceColorOriginalBlob", "voiceColorOriginalUrl"]);
-const cacheFields = new Set(["peaks", "originalPeaks", "voiceColorOriginalPeaks", "trackFrames", "trackFrameSampling", "trackFrameDuration", "trackFrameImportBudget"]);
+const mediaFields = new Set(["blob", "src", "url", "previewSrc", "originalBlob", "originalSrc", "thumbnail", "compatibilityAudioBlob", "processingOriginalBlob", "voiceColorOriginalBlob", "voiceColorOriginalUrl"]);
+const cacheFields = new Set(["peaks", "originalPeaks", "voiceColorOriginalPeaks", "processingOriginalPeaks", "trackFrames", "trackFrameSampling", "trackFrameDuration", "trackFrameImportBudget"]);
 const referenceKey = (ref) => JSON.stringify([ref.kind, ref.entityId, ref.revision ?? null, ref.blobId ?? null]);
 const loadedProjectMedia = new WeakMap();
 
@@ -59,9 +59,6 @@ export async function serializeProjectSnapshot(captured, { registerMedia, editor
   const walk = async (value, path, depth = 0) => {
     if (depth > 64) throw new Error(`项目数据嵌套过深：${path}`);
     if (value === null || typeof value === "boolean" || typeof value === "string") {
-      if (typeof value === "string" && (value.startsWith("blob:") || value.startsWith("data:"))) {
-        throw new Error(`未识别的媒体字段：${path}`);
-      }
       return value;
     }
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -109,6 +106,12 @@ export async function serializeProjectSnapshot(captured, { registerMedia, editor
 export function projectMediaUrl(projectId, ref) {
   if (ref?.kind !== "media" || !ref.entityId || !ref.blobId) throw new Error("无效的项目媒体引用。");
   return `/api/v1/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(ref.entityId)}/content?blobId=${encodeURIComponent(ref.blobId)}`;
+}
+
+export function isProjectMediaBlob(item, blob, field = "blob") {
+  const loaded = blob instanceof Blob ? loadedProjectMedia.get(blob) : null;
+  const reference = item?.projectMedia?.bindings?.[field];
+  return Boolean(loaded && reference && loaded.projectId === item.projectMedia.projectId && referenceKey(loaded.ref) === referenceKey(reference));
 }
 
 export async function loadProjectMediaBlob(item, field = "blob", signal) {

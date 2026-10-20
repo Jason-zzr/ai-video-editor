@@ -31,10 +31,11 @@ opens an existing project directory. Reopening a page in the same running host
 can restore its remembered project. After stopping and restarting the host,
 launch a fresh authenticated page and open the project directory again.
 
-Portable `.timeline` import/export remains available. Complete-project
+Portable `.timeline` import/export remains available. Close a bound local project
+before importing a portable project, so autosave cannot overwrite it. Complete-project
 migration and trash-management interfaces are not part of this integration.
-The imported storage implementation retains its supporting record types and
-routes; this is not a new public stable API or a promise of cross-platform
+The imported storage implementation retains its supporting record types; migration
+and destructive trash routes are not exposed in this runtime. This is not a new public stable API or a promise of cross-platform
 project-package compatibility.
 
 ## Sessions and recovery
@@ -70,8 +71,8 @@ operations.
 
 Adapted from Jason-zzr's MIT-licensed [Auto-cut](https://github.com/Jason-zzr/Auto-cut)
 work for [issue #111](https://github.com/MartinDelophy/ai-video-editor/issues/111).
-The original author is retained on the imported commits: `6f9fd69`, `cf8e16c`,
-`cc21f0c`, `d26fdcd`, `9ad65c0`, and `1a30481`. Compatibility changes retain the
+The original author is retained on the imported commits: `45fa628`, `20de196`,
+`8fa3b52`, `181d1a9`, `145063f`, and `c7cee6d` (adapted from the corresponding Auto-cut commits). Compatibility changes retain the
 current editor's audio remux path and use the Timeline Studio identity.
 Scene segmentation, execution plans, semantic summaries and visual search
 (#112–#115) are excluded.
@@ -80,3 +81,8 @@ Validation uses `npm run check` (including the host TypeScript project) and
 `npm run build:storage`. Session, stream-expiry, lease, retry, real native save /
 reopen and HTTP-client checks are run outside the product repository, consistent
 with its policy against committed test harnesses.
+
+Failed or interrupted operations can intentionally retain uniquely named staging
+files and quarantine directories. This runtime does not automatically sweep
+unconfirmed outputs: preserve the project directory for recovery, and review
+leftovers manually rather than deleting files during an unknown outcome.

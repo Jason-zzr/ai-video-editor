@@ -87,7 +87,11 @@ export async function claimInstance(directory: string) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
-    await rmdir(lock);
+    try { await rmdir(lock); }
+    catch (error) {
+      await writeFile(ownerPath, JSON.stringify(owner), { flag: "wx", mode: 0o600 }).catch(() => {});
+      throw error;
+    }
   };
   try { await writeFile(join(lock, "proof"), proof, { flag: "wx", mode: 0o600 }); }
   catch (error) { await release(); throw error; }

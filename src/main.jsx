@@ -4,7 +4,7 @@ import { App } from "./App.jsx";
 import { registerModelCacheServiceWorker } from "./lib/serviceWorker.js";
 import { connectHostSession } from "./lib/hostSession.js";
 import { getStoredLanguage } from "./i18n.js";
-import { hostErrorText } from "./i18nHost.js";
+import { hostText } from "./i18nHost.js";
 import "./styles.css";
 
 registerModelCacheServiceWorker();
@@ -16,9 +16,9 @@ void connectHostSession().then((hostSession) => {
       <App hostSession={hostSession} />
     </React.StrictMode>,
   );
-}).catch((error) => {
+}).catch(() => {
   const message = document.createElement("p");
   message.setAttribute("role", "alert");
-  message.textContent = hostErrorText(getStoredLanguage(), error);
+  message.textContent = hostText(getStoredLanguage(), "expired");
   rootElement.replaceChildren(message);
 });

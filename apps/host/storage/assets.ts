@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Readable, Transform } from "node:stream";
+import { Readable, Transform, Writable } from "node:stream";
 import { z } from "zod";
 import { HostError } from "../sessions.ts";
 import { type ProjectFiles, StorageIOError } from "./files.ts";
@@ -38,10 +38,24 @@ export async function receiveAsset(files: ProjectFiles, projectId: string, key: 
   } });
   input.once("error", error => meter.destroy(error));
   input.pipe(meter);
-  try { await files.write(stagingPath, meter); }
-  finally { input.unpipe(meter); if (!input.readableEnded) input.destroy(); }
-  if (size !== metadata.sizeBytes) throw new HostError("INVALID_ARGUMENT", 400, "Upload ended before its declared size.");
-  const digest = hash.digest("hex");
+  const cleanupUnaccepted = async () => {
+    // No received.json record can refer to this fresh name until publication.
+    // Read the actual completed helper output, not the stream's queued count.
+    let bytes = 0;
+    const digest = createHash("sha256");
+    try {
+      await files.copyTo(stagingPath, new Writable({ write(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length; digest.update(chunk); callback();
+      } }));
+      await files.remove({ path: stagingPath, sizeBytes: bytes, sha256: digest.digest("hex") });
+    } catch { /* Ownership loss preserves unconfirmed output for recovery. */ }
+  };
+  let inspected: Awaited<ReturnType<typeof inspectMedia>>;
+  let digest: string;
+  try {
+    await files.write(stagingPath, meter);
+    if (size !== metadata.sizeBytes) throw new HostError("INVALID_ARGUMENT", 400, "Upload ended before its declared size.");
+    digest = hash.digest("hex");
   if (previous) {
     if (previous.media.sha256 !== digest || previous.media.sizeBytes !== size) throw new HostError("IDEMPOTENCY_KEY_REUSED", 409, "This import key was used for different media bytes.");
     // Only this verified retry copy is disposable; the original receipt still owns its payload.
@@ -49,7 +63,9 @@ export async function receiveAsset(files: ProjectFiles, projectId: string, key: 
     catch { /* Cleanup failure must not invalidate the already accepted import. */ }
     return previous;
   }
-  const inspected = await inspectMedia(files, stagingPath, size);
+    inspected = await inspectMedia(files, stagingPath, size);
+  } catch (error) { await cleanupUnaccepted(); throw error; }
+  finally { input.unpipe(meter); if (!input.readableEnded) input.destroy(); }
   const assetId = randomUUID(), blobId = randomUUID();
   const media = objectRecord.parse({ kind: "media", entityId: assetId, blobId,
     path: `media/${encodeId(assetId)}/${encodeId(blobId)}.${inspected.extension}`, sizeBytes: size, sha256: digest });

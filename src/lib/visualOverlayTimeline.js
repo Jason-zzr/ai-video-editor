@@ -143,6 +143,7 @@ export function createMainVisualFromOverlay(overlay) {
     type: overlay.type,
     src: overlay.src,
     blob: overlay.blob,
+    projectMedia: overlay.projectMedia,
     generatedBy: overlay.generatedBy,
     generationMetadata: overlay.generationMetadata,
     width: overlay.width,

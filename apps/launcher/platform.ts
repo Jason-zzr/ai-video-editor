@@ -38,6 +38,7 @@ export async function selectLocalPaths(kind: "file" | "directory", multiple: boo
 }
 
 export async function machineDirectory(): Promise<string> {
+  if (process.platform !== "darwin") throw new Error("Local project storage currently requires macOS.");
   if (Number(process.versions.node.split(".")[0]) !== 24) {
     throw new Error("Timeline Studio host requires Node 24. No runtime was installed automatically.");
   }

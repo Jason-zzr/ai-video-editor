@@ -12,11 +12,9 @@ import { importMetadata, prepareAsset, readAsset, receiveAsset, receivedAssets, 
 import { prepareTrash, trashRequest, emptyTrashSelection, emptyTrashDigest, prepareEmptyTrash, validateEmptyTrash,
   type EmptyTrashSelection, type TrashRequest } from "./trash.ts";
 import { collectProjectGarbage, inspectRetention } from "./retention.ts";
-import { createMigrationExports } from "./migration-exports.ts";
-import packageMetadata from "../../../package.json" with { type: "json" };
 
 type Project = { projectId: string; name: string; files: Awaited<ReturnType<typeof openProjectFiles>>;
-  commits: Awaited<ReturnType<typeof createProjectCommits>>; exports: ReturnType<typeof createMigrationExports>;
+  commits: Awaited<ReturnType<typeof createProjectCommits>>;
   release: () => Promise<void>; pages: Set<string> };
 
 export function createProjects(instanceId: string, executable: string) {
@@ -60,7 +58,7 @@ export function createProjects(instanceId: string, executable: string) {
           if (commits.state().blocked) break;
         }
       }
-      return { projectId, name: basename(directory), files, commits, exports: createMigrationExports(files, commits, executable, packageMetadata.version), release, pages: new Set<string>(), recoverySaveId: recoveryAccepted?.save.saveId,
+      return { projectId, name: basename(directory), files, commits, release, pages: new Set<string>(), recoverySaveId: recoveryAccepted?.save.saveId,
         recoveryReplayed: recoveryAccepted?.replayed ?? false };
     } catch (error) { await release().catch(() => {}); throw error; }
   };
@@ -98,7 +96,8 @@ export function createProjects(instanceId: string, executable: string) {
         const parsed = recoveryChoice.safeParse(value);
         if (!parsed.success) throw new HostError("INVALID_ARGUMENT", 400, "A complete recovery selection is required.");
         const choice = parsed.data, files = await openProjectFiles(path, executable);
-        let existing = projects.get(projectId);
+        const existing = projects.get(projectId);
+        let releasedSameDirectory = false;
         if (existing && existing.files.directory === files.directory && existing.commits.requests().some(save =>
           save.route === "project-recovery" && save.subject === projectId && save.idempotencyKey === key)) {
           const replay = await existing.commits.accept({ route: "project-recovery", subject: projectId, idempotencyKey: key,
@@ -106,7 +105,7 @@ export function createProjects(instanceId: string, executable: string) {
           existing.pages.add(page.pageSessionId);
           return { projectId, saveId: replay.save.saveId, replayed: true };
         }
-        if (existing && (editors.hasWriter(projectId) || importing.has(projectId) || existing.exports.busy() || existing.commits.state().pending ||
+        if (existing && (editors.hasWriter(projectId) || importing.has(projectId) || existing.commits.state().pending ||
             (existing.files.directory !== files.directory && existing.commits.state().blocked))) {
           throw new HostError("PROJECT_ID_CONFLICT", 409, "Close the active editor and finish pending writes before recovering this project.");
         }
@@ -115,16 +114,17 @@ export function createProjects(instanceId: string, executable: string) {
           if (report.projectId !== projectId || report.status !== "previous_available" || report.currentSavePointId !== choice.currentSavePointId ||
               report.currentCommitSequence !== choice.currentCommitSequence || report.currentCommitSha256 !== choice.currentCommitSha256 ||
               report.previousSavePointId !== choice.previousSavePointId) throw new HostError("REFERENCE_STALE", 409, "Recovery options changed.");
-          if (editors.hasWriter(projectId) || importing.has(projectId) || existing.exports.busy() || existing.commits.state().pending) {
+          if (editors.hasWriter(projectId) || importing.has(projectId) || existing.commits.state().pending) {
             throw new HostError("PROJECT_ID_CONFLICT", 409, "The project became active while recovery was being prepared.");
           }
-          existing.commits.stopWrites(); await existing.release(); editors.closeProject(projectId); projects.delete(projectId);
-          existing = undefined;
+          existing.commits.stopWrites(); await existing.release(); editors.closeProject(projectId);
+          // Keep the blocked registration readable if replacement initialization fails.
+          releasedSameDirectory = true;
         }
         const recovered = await initialize(files.directory, projectId, { choice, key });
         try {
-          if (existing) {
-            if (editors.hasWriter(projectId) || importing.has(projectId) || existing.exports.busy() || existing.commits.state().pending || existing.commits.state().blocked) {
+          if (existing && !releasedSameDirectory) {
+            if (editors.hasWriter(projectId) || importing.has(projectId) || existing.commits.state().pending || existing.commits.state().blocked) {
               throw new HostError("PROJECT_ID_CONFLICT", 409, "The other project copy became active during recovery.");
             }
             existing.commits.stopWrites(); await existing.release(); editors.closeProject(projectId);
@@ -186,7 +186,7 @@ export function createProjects(instanceId: string, executable: string) {
             existing.pages.add(page.pageSessionId);
             return describe(existing);
           }
-          if (editors.hasWriter(projectId) || importing.has(projectId) || existing.exports.busy() || existing.commits.state().pending || existing.commits.state().blocked) {
+          if (editors.hasWriter(projectId) || importing.has(projectId) || existing.commits.state().pending || existing.commits.state().blocked) {
             throw new HostError("PROJECT_ID_CONFLICT", 409, "Close the writable session and finish saving the current copy first.");
           }
         }
@@ -194,7 +194,7 @@ export function createProjects(instanceId: string, executable: string) {
         if (existing) {
           try {
             // Opening the candidate can take time; another page may have resumed editing.
-            if (editors.hasWriter(projectId) || importing.has(projectId) || existing.exports.busy() || existing.commits.state().pending || existing.commits.state().blocked) {
+            if (editors.hasWriter(projectId) || importing.has(projectId) || existing.commits.state().pending || existing.commits.state().blocked) {
               throw new HostError("PROJECT_ID_CONFLICT", 409, "The current copy became active while the new copy was opening.");
             }
             existing.commits.stopWrites();
@@ -393,45 +393,14 @@ export function createProjects(instanceId: string, executable: string) {
       });
       return { taskId: receipt.taskId, stepId: receipt.stepId, saveId: accepted.save.saveId, replayed: accepted.replayed };
     },
-    async exportProject(page: PageSession, projectId: string, editorSessionId: string, request: { key: string; savePointId: string; parent: string; name: string }) {
-      active();
-      const project = get(page, projectId);
-      editors.requireWrite(page, editorSessionId, projectId);
-      return project.exports.accept(request);
-    },
-    async migrationTask(page: PageSession, taskId: string) {
-      for (const project of projects.values()) {
-        if (!project.pages.has(page.pageSessionId)) continue;
-        const task = await project.exports.task(taskId);
-        if (task) return task;
-      }
-      return null;
-    },
-    async cancelMigration(page: PageSession, projectId: string, editorSessionId: string, taskId: string) {
-      active();
-      const project = get(page, projectId);
-      editors.requireWrite(page, editorSessionId, projectId);
-      const result = await project.exports.cancel(taskId);
-      if (!result) throw new HostError("TASK_NOT_FOUND", 404, "Export task not found in this project.");
-      return { taskId: result.taskId, status: result.status };
-    },
-    async retryMigration(page: PageSession, projectId: string, editorSessionId: string, taskId: string, expectedAttemptId: string, key: string) {
-      active();
-      const project = get(page, projectId);
-      editors.requireWrite(page, editorSessionId, projectId);
-      const result = await project.exports.retry(taskId, expectedAttemptId, key);
-      if (!result) throw new HostError("TASK_NOT_FOUND", 404, "Export task not found in this project.");
-      return result;
-    },
     get,
     editors,
-    busy() { return pendingOperations > 0 || importing.size > 0 || [...projects.values()].some(project => project.exports.busy() || project.commits.state().pending > 0 || project.commits.state().blocked); },
+    busy() { return pendingOperations > 0 || importing.size > 0 || [...projects.values()].some(project => project.commits.state().pending > 0 || project.commits.state().blocked); },
     async close() {
       closing = true;
       await tail;
       if (importing.size) await new Promise<void>(resolve => importWaiters.add(resolve));
       const results = await Promise.allSettled([...projects.values()].map(async project => {
-        await project.exports.close();
         await project.commits.drain();
         project.commits.stopWrites();
         await project.release();

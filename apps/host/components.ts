@@ -38,7 +38,8 @@ export async function inspectWebResources(root: string) {
   const documentUrl = new URL("http://127.0.0.1/");
   const base = elements.find((node) => node.tagName === "base" && node.attrs.some((attr) => attr.name === "href"));
   const baseHref = base?.attrs.find((attr) => attr.name === "href")?.value;
-  const baseUrl = URL.parse(baseHref ?? "", documentUrl) ?? documentUrl;
+  const baseUrl = URL.parse(baseHref ?? "", documentUrl.href) ?? documentUrl;
+  if (baseUrl.origin !== documentUrl.origin) throw new Error("Editor base URL must remain local.");
   for (const element of elements) {
     const attrs = new Map(element.attrs.map((attr) => [attr.name, attr.value]));
     const rel = (attrs.get("rel") ?? "").toLowerCase()
@@ -46,7 +47,7 @@ export async function inspectWebResources(root: string) {
     const reference = element.tagName === "script" ? attrs.get("src") :
       element.tagName === "link" && (rel.includes("stylesheet") || rel.includes("modulepreload")) ? attrs.get("href") : undefined;
     if (reference === undefined) continue;
-    const resource = URL.parse(reference, baseUrl);
+    const resource = URL.parse(reference, baseUrl.href);
     if (!resource) throw new Error(`Invalid editor resource URL: ${reference}`);
     if (resource.origin !== documentUrl.origin) continue;
     let name: string;

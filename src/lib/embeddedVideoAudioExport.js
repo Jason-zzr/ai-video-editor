@@ -50,8 +50,9 @@ export async function prepareEmbeddedVideoAudio(visualSegments = [], onProgress,
       phaseParams: { current: index + 1, total: uniqueAssets.length },
     });
     try {
-      const sourceBlob = await loadProjectMediaBlob(segment, "blob", signal);
-      if (!sourceBlob) continue;
+      const hasCompatibilityAudio = segment.compatibilityAudioBlob instanceof Blob || segment.projectMedia?.bindings?.compatibilityAudioBlob;
+      const sourceBlob = hasCompatibilityAudio ? null : await loadProjectMediaBlob(segment, "blob", signal);
+      if (!sourceBlob && !hasCompatibilityAudio) continue;
       if (!(segment.compatibilityAudioBlob instanceof Blob) && !segment.projectMedia?.bindings?.compatibilityAudioBlob) {
         const remuxed = await remuxEmbeddedAudio(sourceBlob, signal).catch((error) => {
           throwIfExportAborted(signal);

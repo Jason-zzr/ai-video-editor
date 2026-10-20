@@ -128,7 +128,7 @@ export function createAssetDropActions(d) {
     if (track === "audio") {
       let blob;
       try { blob = await loadProjectMediaBlob(asset); }
-      catch (error) { d.notify(error.message); return; }
+      catch (error) { console.warn("Audio asset could not be loaded", error); d.notify(tr("audioAssetUnavailable", "当前音频素材不可用，请重新上传")); return; }
       const hasValidDuration = Number.isFinite(Number(asset.duration)) && Number(asset.duration) > 0;
       const decoded = asset.peaks?.length && hasValidDuration
         ? { duration: Number(asset.duration), peaks: asset.peaks }

@@ -391,7 +391,7 @@ async function projectMedia(event) {
     channel.port1.onmessage = ({ data }) => {
       if (data?.requestId === requestId) finish(typeof data.bearer === "string" ? data.bearer : null);
     };
-    timer = setTimeout(() => finish(null), 3000);
+    timer = setTimeout(() => finish(null), 15_000);
     event.request.signal.addEventListener("abort", abort, { once: true });
     if (event.request.signal.aborted) { finish(null); return; }
     try { client.postMessage({ type: "TIMELINE_STUDIO_MEDIA_CREDENTIAL", requestId }, [channel.port2]); }

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 
 const execute = promisify(execFile);
@@ -14,7 +15,7 @@ export async function buildStorage(directory) {
   return target;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   const directory = fileURLToPath(new URL("../.cache/local-host/", import.meta.url));
   await mkdir(directory, { recursive: true });
   console.info(await buildStorage(directory));

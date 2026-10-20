@@ -1,7 +1,7 @@
 import { ALL_FORMATS, CustomSource, Input } from "mediabunny";
 import { Readable } from "node:stream";
 import { HostError } from "../sessions.ts";
-import type { ProjectFiles } from "./files.ts";
+import { StorageIOError, type ProjectFiles } from "./files.ts";
 
 export async function inspectMedia(files: ProjectFiles, path: string, sizeBytes: number) {
   const chunks: Buffer[] = [];
@@ -24,7 +24,8 @@ export async function inspectMedia(files: ProjectFiles, path: string, sizeBytes:
     dispose() { for (const stream of streams) stream.destroy(); streams.clear(); },
   });
   const input = new Input({ source, formats: ALL_FORMATS });
-  const timeout = setTimeout(() => input.dispose(), 30_000);
+  let timedOut = false;
+  const timeout = setTimeout(() => { timedOut = true; input.dispose(); }, 30_000);
   try {
     const video = await input.getPrimaryVideoTrack(), audio = await input.getPrimaryAudioTrack();
     if (!video && !audio) throw new Error("No audio or video track.");
@@ -35,7 +36,9 @@ export async function inspectMedia(files: ProjectFiles, path: string, sizeBytes:
     const extension = extensions[mimeType];
     if (!extension) throw new Error("Unsupported media container.");
     return { kind: video ? "video" as const : "audio" as const, mimeType, extension };
-  } catch {
+  } catch (error) {
+    if (error instanceof StorageIOError) throw error;
+    if (timedOut) throw new HostError("MEDIA_PROBE_TIMEOUT", 503, "Media inspection timed out; retry the operation.");
     throw new HostError("UNSUPPORTED_MEDIA", 400, "The file does not contain a supported readable media container.");
   } finally { clearTimeout(timeout); input.dispose(); }
 }

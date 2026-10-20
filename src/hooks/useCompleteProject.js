@@ -5,14 +5,15 @@ import { waitForHostMediaController } from "../lib/serviceWorker.js";
 
 const PROJECT_BINDING_KEY = "timeline-studio.project-binding";
 
-export function useCompleteProject({ hostSession, captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language }) {
+export function useCompleteProject({ hostSession, captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject }) {
   const ht = (key) => hostText(language, key);
   const [state, setState] = useState({ status: "unbound", name: "", pending: 0, lastSaved: null, error: "" });
   const binding = useRef(null);
   const creating = useRef(false);
-  const latest = useRef({ captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language });
+  const latest = useRef({ captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject });
   latest.current = { captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify };
   const operationVersion = useRef(0);
+  const recoveryAttempt = useRef(null);
   const identities = useRef({ blobs: new WeakMap(), next: 0 });
   const lastSignature = useRef("");
   const observedSignature = useRef("");
@@ -151,14 +152,17 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
           const choice = { currentSavePointId: report.currentSavePointId, currentCommitSequence: report.currentCommitSequence,
             currentCommitSha256: report.currentCommitSha256, previousSavePointId: report.previousSavePointId };
           const signal = AbortSignal.timeout(300_000);
+          const recoveryBasis = JSON.stringify([report.projectId, choice]);
+          if (recoveryAttempt.current?.basis !== recoveryBasis) recoveryAttempt.current = { basis: recoveryBasis, key: crypto.randomUUID() };
           const receipt = await hostSession.request("/api/v1/projects/recoveries", { selectionId: selection.selectionId,
-            projectId: report.projectId, choice }, crypto.randomUUID(), { signal });
+            projectId: report.projectId, choice }, recoveryAttempt.current.key, { signal });
           for (;;) {
             ensureOperation(version);
             const saved = await hostSession.request(`/api/v1/saves/${encodeURIComponent(receipt.saveId)}`, undefined, undefined, { signal });
             if (saved.status === "failed") throw new Error(saved.error?.message || "项目回退未完成，原文件已保留。", { cause: error });
             if (saved.status === "succeeded") {
               if (!saved.savePointId) throw new Error("回退回执缺少保存点。", { cause: error });
+              recoveryAttempt.current = null;
               break;
             }
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -330,7 +334,11 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
     };
   }, [acquire, hostSession]);
 
-  return hostSession ? { ...state, error: binding.current?.conflict ? hostErrorText(language, { code: "PROJECT_REVISION_CONFLICT" }) : state.error ? hostErrorText(language, { code: state.errorCode }) : "", save, open, projectId: binding.current?.project.projectId,
+  return hostSession ? { ...state,
+    importPortable: (file) => {
+      if (binding.current || creating.current) { notify(ht("importBound")); return; }
+      return handleImportProject(file);
+    }, error: binding.current?.conflict ? hostErrorText(language, { code: "PROJECT_REVISION_CONFLICT" }) : state.error ? hostErrorText(language, { code: state.errorCode }) : "", save, open, projectId: binding.current?.project.projectId,
     newProject: () => resetProject(), closeProject: () => resetProject(true),
     busy: () => creating.current || pendingCapture.current || Boolean(binding.current?.queue?.busy()) } : null;
 }

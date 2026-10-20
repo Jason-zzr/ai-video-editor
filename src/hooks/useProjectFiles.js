@@ -36,6 +36,10 @@ export function useProjectFiles(deps) {
     for (const segment of restored.audioSegments) {
       segment.blob = await audio(segment);
       segment.peaks = [];
+      if (segment.projectMedia?.bindings?.processingOriginalBlob) {
+        segment.processingOriginalBlob = await audio(segment, "processingOriginalBlob");
+        segment.processingOriginalPeaks = [];
+      }
       if (segment.projectMedia?.bindings?.voiceColorOriginalBlob) {
         segment.voiceColorOriginalBlob = await audio(segment, "voiceColorOriginalBlob");
         segment.voiceColorOriginalPeaks = [];

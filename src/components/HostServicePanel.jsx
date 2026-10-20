@@ -22,7 +22,7 @@ export function HostServicePanel({ client, isBusy, language }) {
       <div className="menu-list" style={{ minWidth: 280, maxWidth: "80vw" }}>
         <p role="status">{status}</p>
         {error || snapshot.error ? <p role="alert">{hostErrorText(language, error)}</p> : null}
-        <button type="button" disabled={pending || snapshot.connection === "expired"} onClick={async () => {
+        <button type="button" disabled={pending || ["expired", "draining"].includes(snapshot.connection)} onClick={async () => {
           setPending(true); setError(null);
           try { await client.refresh(); } catch (failure) { setError(failure); }
           finally { setPending(false); }

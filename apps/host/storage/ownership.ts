@@ -23,6 +23,7 @@ export async function claimProject(files: ProjectFiles, projectId: string, insta
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
     }
   } catch (error) {
+    if (error instanceof StorageIOError && error.errno !== 2) throw error;
     if (!(error instanceof StorageIOError && error.errno === 2)) {
       throw new HostError("PROJECT_WRITE_LOCKED", 409, "The previous project owner cannot be safely released.");
     }
@@ -31,7 +32,8 @@ export async function claimProject(files: ProjectFiles, projectId: string, insta
     nonce: randomUUID(), released: false });
   try {
     return await files.lock(path, { expected, active: JSON.stringify(owner), released: JSON.stringify({ ...owner, released: true }) }, onLost);
-  } catch {
+  } catch (error) {
+    if (error instanceof StorageIOError && ![11, 22, 35, 70, 116].includes(error.errno ?? -1)) throw error;
     throw new HostError("PROJECT_WRITE_LOCKED", 409, "The project is locked or ownership changed during acquisition.");
   }
 }

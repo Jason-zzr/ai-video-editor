@@ -1399,7 +1399,7 @@ export function App({ hostSession = null }) {
     sourceAudioAssetId, sourceAudioLinked, sourceAudioName, sourceAudioStart, sourceAudioVolume, sourceAudioSpatialEffect, sourceAudioSpatialAmount, speed, stickerSegments,
     timelineZoom, trackLocks, trackVisibility, visualSegments, visualOverlaySegments, volume,
   });
-  const completeProject = useCompleteProject({ hostSession, language: activeLanguage, captureCompleteProject, prepareCompleteProject, handleNewProject, notify,
+  const completeProject = useCompleteProject({ hostSession, language: activeLanguage, captureCompleteProject, prepareCompleteProject, handleNewProject, handleImportProject, notify,
     isEditorBusy: () => isEditorBusy() || webMcp.isAiRunning() || generationPlugins.job.running });
 
   const {
@@ -1641,7 +1641,7 @@ export function App({ hostSession = null }) {
         setShowFileMenu={setShowFileMenu}
         handleNewProject={completeProject ? () => { void completeProject.newProject(); } : handleNewProject}
         handleExportProject={handleExportProject}
-        handleImportProject={handleImportProject}
+        handleImportProject={completeProject ? completeProject.importPortable : handleImportProject}
         projectFileInputRef={projectFileInputRef}
       />
 

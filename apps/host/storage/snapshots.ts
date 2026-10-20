@@ -60,7 +60,7 @@ export function validateSnapshot(input: SnapshotInput, current: Manifest | null)
         if (!item || typeof item !== "object" || Array.isArray(item)) throw new HostError("REFERENCE_INVALID", 409, "Invalid media bindings.");
         for (const [field, binding] of Object.entries(item)) {
           const ref = objectReference.safeParse(binding);
-          if (!["blob", "src", "url", "previewSrc", "originalBlob", "originalSrc", "thumbnail", "compatibilityAudioBlob", "voiceColorOriginalBlob", "voiceColorOriginalUrl"].includes(field) ||
+          if (!["blob", "src", "url", "previewSrc", "originalBlob", "originalSrc", "thumbnail", "compatibilityAudioBlob", "processingOriginalBlob", "voiceColorOriginalBlob", "voiceColorOriginalUrl"].includes(field) ||
               !ref.success || ref.data.kind !== "media" || !refs.has(referenceKey(ref.data))) {
             throw new HostError("REFERENCE_INVALID", 409, "Snapshot media binding is not registered.");
           }

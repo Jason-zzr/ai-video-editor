@@ -10,10 +10,8 @@ import { createEvents } from "./events.ts";
 import { createLifecycle } from "./lifecycle.ts";
 import { createProjects } from "./storage/projects.ts";
 import { createFileSelections, type SelectionPurpose } from "./storage/selections.ts";
-import { createMigrationImports } from "./storage/migration-imports.ts";
 import type { SnapshotInput } from "./storage/snapshots.ts";
 import type { RecoveryChoice } from "./storage/commits.ts";
-import type { EmptyTrashSelection } from "./storage/trash.ts";
 import { importMetadata } from "./storage/assets.ts";
 import { z } from "zod";
 import { mediaRange } from "./storage/media.ts";
@@ -43,9 +41,6 @@ const projectSchema = object({ projectId: text, name: text, blocked: { type: "bo
   pending: { type: "integer", minimum: 0 }, currentSavePointId: nullableText, editorSnapshotId: nullableText,
   editorSequence: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] }, lastSaveId: nullableText });
 const sequenceSchema = { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER };
-const trashSelectionProperties = { items: { type: "array", minItems: 1, maxItems: 1000,
-  items: object({ tombstoneId: text, revision: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER } }) },
-  digest: { type: "string", minLength: 64, maxLength: 64 } };
 const snapshotProperties = {
   editorSnapshotId: text, editorSequence: sequenceSchema, format: { const: "timeline-studio-editor-snapshot" },
   payload: { type: "object", additionalProperties: true },
@@ -73,7 +68,6 @@ export async function startHost(options: {
   const lifecycle = createLifecycle(options.instanceId);
   const projects = createProjects(options.instanceId, options.storageExecutable ?? join(dirname(options.dist), "timeline-studio-storage"));
   const selections = createFileSelections();
-  const imports = options.machineDirectory ? await createMigrationImports(options.machineDirectory, options.storageExecutable ?? join(dirname(options.dist), "timeline-studio-storage")) : null;
   app.addContentTypeParser("application/octet-stream", (_request, payload, done) => done(null, payload));
   const requestSessions = new WeakMap<FastifyRequest, PageSession>();
   let origin = "";
@@ -103,7 +97,6 @@ export async function startHost(options: {
       events.close();
       sessions.clear();
       await app.close();
-      await imports?.close();
       await projects.close();
       selections.clear();
       await options.release();
@@ -190,7 +183,7 @@ export async function startHost(options: {
       writableProjects: projects.editors.writable(pageFor(request)), state: lifecycle.state(), exitSubject: lifecycle.subject });
   });
   app.post<{ Body: { purpose: SelectionPurpose; multiple: boolean; mediaKinds?: ("image" | "video" | "audio")[] } }>("/api/v1/file-selections", {
-    schema: { querystring: emptyQuery, body: object({ purpose: { enum: ["project-create", "project-open", "asset-import", "migration-export", "project-import"] },
+    schema: { querystring: emptyQuery, body: object({ purpose: { enum: ["project-create", "project-open", "asset-import"] },
       multiple: { type: "boolean" }, mediaKinds: { type: "array", maxItems: 3, uniqueItems: true, items: { enum: ["image", "video", "audio"] } } }, ["purpose", "multiple"]),
     response: responses(object({ selectionId: text, expiresAt: text, items: { type: "array", maxItems: 256,
       items: object({ name: { type: "string", maxLength: 1024 }, kind: { enum: ["directory", "file"] } }) } })) },
@@ -306,123 +299,11 @@ export async function startHost(options: {
     if (request.method === "HEAD") return reply.send();
     return reply.send(files.stream(media.path, range.start, range.length));
   });
-  app.delete<{ Params: { projectId: string; assetId: string }; Body: { editorSessionId: string } }>("/api/v1/projects/:projectId/assets/:assetId", {
-    schema: { params: object({ projectId: text, assetId: text }), querystring: emptyQuery, body: object({ editorSessionId: text }),
-      response: { 202: object({ ok: { const: true }, data: object({ saveId: text, tombstoneId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"], match = request.headers["if-match"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const revision = typeof match === "string" && match.startsWith('"') && match.endsWith('"') ? Number(match.slice(1, -1)) : NaN;
-    if (!Number.isSafeInteger(revision) || revision < 1 || match !== `"${revision}"`) throw new HostError("INVALID_ARGUMENT", 400, "If-Match must contain the quoted asset revision.");
-    const result = await projects.changeTrash(pageFor(request), request.params.projectId, request.body.editorSessionId, key,
-      { action: "delete", assetId: request.params.assetId, revision });
-    reply.code(202); return success(request, result);
-  });
-  app.get<{ Params: { projectId: string }; Querystring: { cursor?: string } }>("/api/v1/projects/:projectId/trash", {
-    schema: { params: object({ projectId: text }), querystring: object({ cursor: text }, []),
-      response: responses(object({ items: { type: "array", maxItems: 100, items: object({ schemaVersion: { const: 1 }, projectId: text,
-        tombstoneId: text, revision: { type: "integer", minimum: 1 }, assetId: text,
-        assetRef: object({ kind: { const: "asset" }, entityId: text, revision: { type: "integer", minimum: 1 } }),
-        name: { type: "string" }, deletedAt: text, purgeRequestedAt: text, recoverable: { type: "boolean" }, mediaState: { enum: ["present", "absent", "unverified"] }, collectionFailed: { type: "boolean" },
-        protectedReasons: { type: "array", items: text }, reclaimableBytes: { anyOf: [sequenceSchema, { type: "null" }] } },
-      ["schemaVersion", "projectId", "tombstoneId", "revision", "assetId", "assetRef", "name", "deletedAt", "recoverable", "mediaState", "collectionFailed", "protectedReasons", "reclaimableBytes"]) }, cursor: nullableText })) },
-  }, async request => success(request, await projects.trash(pageFor(request), request.params.projectId, request.query.cursor)));
-  app.post<{ Params: { projectId: string; tombstoneId: string }; Body: { editorSessionId: string; revision: number } }>("/api/v1/projects/:projectId/trash/:tombstoneId/restore", {
-    schema: { params: object({ projectId: text, tombstoneId: text }), querystring: emptyQuery,
-      body: object({ editorSessionId: text, revision: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER } }),
-      response: { 202: object({ ok: { const: true }, data: object({ saveId: text, tombstoneId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const result = await projects.changeTrash(pageFor(request), request.params.projectId, request.body.editorSessionId, key,
-      { action: "restore", tombstoneId: request.params.tombstoneId, revision: request.body.revision });
-    reply.code(202); return success(request, result);
-  });
-  app.post<{ Params: { projectId: string }; Body: EmptyTrashSelection & { editorSessionId: string; confirmationId: string } }>("/api/v1/projects/:projectId/trash/empty", {
-    schema: { params: object({ projectId: text }), querystring: emptyQuery,
-      body: object({ ...trashSelectionProperties, editorSessionId: text, confirmationId: text }),
-      response: { 202: object({ ok: { const: true }, data: object({ saveId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const { items, digest, editorSessionId, confirmationId } = request.body;
-    const result = await projects.emptyTrash(pageFor(request), request.params.projectId, editorSessionId, { items, digest }, confirmationId, key);
-    reply.code(202); return success(request, result);
-  });
-  app.post<{ Params: { projectId: string }; Body: { editorSessionId: string } }>("/api/v1/projects/:projectId/trash/collection-retries", {
-    schema: { params: object({ projectId: text }), querystring: emptyQuery, body: object({ editorSessionId: text }),
-      response: responses(object({ gcId: text, savePointId: text, replayed: { type: "boolean" }, removed: sequenceSchema,
-        absent: sequenceSchema, pending: sequenceSchema, protected: sequenceSchema })) },
-  }, async request => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    return success(request, await projects.retryCollection(pageFor(request), request.params.projectId, request.body.editorSessionId, key));
-  });
-  app.post<{ Params: { projectId: string }; Body: { editorSessionId: string; savePointId: string; selectionId: string; name: string } }>("/api/v1/projects/:projectId/migration-exports", {
-    schema: { params: object({ projectId: text }), querystring: emptyQuery,
-      body: object({ editorSessionId: text, savePointId: text, selectionId: text, name: text }),
-      response: { 202: object({ ok: { const: true }, data: object({ taskId: text, exportId: text, savePointId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const page = pageFor(request), parent = selections.resolve(page, request.body.selectionId, "migration-export")[0];
-    const accepted = await projects.exportProject(page, request.params.projectId, request.body.editorSessionId,
-      { key, parent, name: request.body.name, savePointId: request.body.savePointId });
-    reply.code(202); return success(request, accepted);
-  });
-  app.post<{ Body: { selectionId: string; targetSelectionId: string; name: string } }>("/api/v1/project-imports", {
-    schema: { querystring: emptyQuery, body: object({ selectionId: text, targetSelectionId: text, name: text }),
-      response: { 202: object({ ok: { const: true }, data: object({ taskId: text, importId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    if (!imports) throw new HostError("COMPONENT_NOT_READY", 503, "The host machine data directory is unavailable.");
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const page = pageFor(request), parent = selections.resolve(page, request.body.targetSelectionId, "project-create")[0];
-    const source = await selections.openPackage(page, request.body.selectionId);
-    const accepted = await imports.accept(page, parent, request.body.name, key, source);
-    reply.code(202); return success(request, accepted);
-  });
   app.get<{ Params: { taskId: string } }>("/api/v1/tasks/:taskId", {
-    schema: { params: object({ taskId: text }), querystring: emptyQuery, response: responses({ anyOf: [object({ taskId: text, projectId: text,
+    schema: { params: object({ taskId: text }), querystring: emptyQuery, response: responses(object({ taskId: text, projectId: text,
       status: { enum: ["queued", "running", "succeeded", "failed"] }, saveId: text, stepId: text, attemptId: text,
-      resultId: nullableText, assetId: nullableText, error: { anyOf: [object({ code: text, message: { type: "string", maxLength: 1024 } }), { type: "null" }] } }),
-      object({ taskId: text, projectId: text, exportId: text, attemptId: text, savePointId: text,
-        status: { enum: ["queued", "running", "cancel_requested", "succeeded", "failed", "interrupted", "cancelled"] },
-        output: { anyOf: [object({ name: text, sizeBytes: sequenceSchema, sha256: text }), { type: "null" }] },
-        error: { anyOf: [object({ code: text, message: { type: "string", maxLength: 1024 } }), { type: "null" }] } }),
-      object({ taskId: text, importId: text, attemptId: text, projectId: nullableText,
-        status: { enum: ["queued", "running", "cancel_requested", "succeeded", "failed", "interrupted", "cancelled"] },
-        output: { anyOf: [object({ name: text, projectId: text, savePointId: text }), { type: "null" }] },
-        error: { anyOf: [object({ code: text, message: { type: "string", maxLength: 1024 } }), { type: "null" }] } })] }) },
-  }, async request => success(request, await imports?.task(pageFor(request), request.params.taskId) ?? await projects.migrationTask(pageFor(request), request.params.taskId) ?? projects.task(pageFor(request), request.params.taskId)));
-  app.post<{ Params: { taskId: string }; Body: { projectId: string; editorSessionId: string; reason: string } | { reason: string } }>("/api/v1/tasks/:taskId/cancel-requests", {
-    schema: { params: object({ taskId: text }), querystring: emptyQuery,
-      body: { anyOf: [object({ projectId: text, editorSessionId: text, reason: { const: "user" } }), object({ reason: { const: "user" } })] },
-      response: { 202: object({ ok: { const: true }, data: object({ taskId: text, status: text }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const body = request.body;
-    if (!("projectId" in body) && !imports) throw new HostError("COMPONENT_NOT_READY", 503, "Import task storage is unavailable.");
-    const result = "projectId" in body ? await projects.cancelMigration(pageFor(request), body.projectId, body.editorSessionId, request.params.taskId) :
-      await imports!.cancel(pageFor(request), request.params.taskId);
-    reply.code(202); return success(request, result);
-  });
-  app.post<{ Params: { taskId: string }; Body: { projectId: string; editorSessionId: string; expectedAttemptId: string } | { selectionId: string; expectedAttemptId: string } }>("/api/v1/tasks/:taskId/retries", {
-    schema: { params: object({ taskId: text }), querystring: emptyQuery,
-      body: { anyOf: [object({ projectId: text, editorSessionId: text, expectedAttemptId: text }), object({ selectionId: text, expectedAttemptId: text })] },
-      response: { 202: object({ ok: { const: true }, data: { anyOf: [object({ taskId: text, exportId: text, attemptId: text, replayed: { type: "boolean" } }),
-        object({ taskId: text, importId: text, attemptId: text, replayed: { type: "boolean" } })] }, meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
-  }, async (request, reply) => {
-    const key = request.headers["idempotency-key"];
-    if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    const body = request.body, page = pageFor(request);
-    if (!("projectId" in body) && !imports) throw new HostError("COMPONENT_NOT_READY", 503, "Import task storage is unavailable.");
-    const result = "projectId" in body ? await projects.retryMigration(page, body.projectId, body.editorSessionId,
-      request.params.taskId, body.expectedAttemptId, key) : await imports!.retry(page, request.params.taskId, body.expectedAttemptId, key,
-      await selections.openPackage(page, body.selectionId));
-    reply.code(202); return success(request, result);
-  });
+      resultId: nullableText, assetId: nullableText, error: { anyOf: [object({ code: text, message: { type: "string", maxLength: 1024 } }), { type: "null" }] } })) },
+  }, async request => success(request, projects.task(pageFor(request), request.params.taskId)));
   app.get<{ Params: { resultId: string } }>("/api/v1/results/:resultId", {
     schema: { params: object({ resultId: text }), querystring: emptyQuery,
       response: responses(object({ resultId: text, projectId: text, taskId: text, attemptId: text,
@@ -474,15 +355,9 @@ export async function startHost(options: {
     await reopen();
     return success(request, { instanceId: options.instanceId });
   });
-  app.post<{ Body: typeof lifecycle.subject | (EmptyTrashSelection & { action: "trash.empty"; subjectId: string; editorSessionId: string }) }>("/api/v1/confirmation-challenges", {
-    schema: { querystring: emptyQuery, body: { anyOf: [subjectSchema, object({ action: { const: "trash.empty" }, subjectId: text,
-      editorSessionId: text, ...trashSelectionProperties })] }, response: responses(object({ confirmationId: text, expiresAt: text })) },
-  }, async request => {
-    const input = request.body;
-    if ("items" in input) return success(request, await projects.confirmEmptyTrash(pageFor(request), input.subjectId, input.editorSessionId,
-      { items: input.items, digest: input.digest }));
-    return success(request, lifecycle.confirm(pageFor(request), input));
-  });
+  app.post<{ Body: typeof lifecycle.subject }>("/api/v1/confirmation-challenges", {
+    schema: { querystring: emptyQuery, body: subjectSchema, response: responses(object({ confirmationId: text, expiresAt: text })) },
+  }, async request => success(request, lifecycle.confirm(pageFor(request), request.body)));
   app.post<{ Body: { mode: string; confirmationId: string } }>("/api/v1/application/exit-requests", {
     schema: { querystring: emptyQuery, body: object({ mode: { const: "normal" }, confirmationId: text }),
       response: responses(object({ state: { const: "Draining" }, replayed: { type: "boolean" } })) },
@@ -495,7 +370,7 @@ export async function startHost(options: {
   }, async (request) => {
     const key = request.headers["idempotency-key"];
     if (typeof key !== "string" || !key.length || key.length > 128) throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
-    if (projects.busy() || selections.busy() || imports?.busy()) throw new HostError("TASKS_DRAINING", 409, "Wait for project operations to finish before stopping.");
+    if (projects.busy() || selections.busy()) throw new HostError("TASKS_DRAINING", 409, "Wait for project operations to finish before stopping.");
     return success(request, lifecycle.exit(pageFor(request), request.body, key));
   });
 

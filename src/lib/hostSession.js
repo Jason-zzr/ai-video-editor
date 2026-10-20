@@ -12,6 +12,7 @@ export async function connectHostSession() {
   let streamController;
   let closed = false;
   let nextRefreshAt = 0;
+  let reconnectDelay = 3000;
   const update = (changes) => {
     snapshot = { ...snapshot, ...changes };
     for (const listener of listeners) listener();
@@ -130,6 +131,7 @@ export async function connectHostSession() {
         throw new Error("Local service event stream is unavailable.");
       }
       if (!response.body) throw new Error("Local service returned no event stream.");
+      reconnectDelay = 3000;
       reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -164,7 +166,10 @@ export async function connectHostSession() {
       clearTimeout(connectionTimer);
       await reader?.cancel().catch(() => {});
       reader?.releaseLock();
-      if (!closed && credential) retryTimer = setTimeout(() => { void subscribe(); }, 3000);
+      if (!closed && credential) {
+        retryTimer = setTimeout(() => { void subscribe(); }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 60_000);
+      }
     }
   }
   void subscribe();

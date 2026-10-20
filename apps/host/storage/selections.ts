@@ -6,7 +6,7 @@ import { basename } from "node:path";
 import { selectLocalPaths } from "../../launcher/platform.ts";
 import { HostError, type PageSession } from "../sessions.ts";
 
-export type SelectionPurpose = "project-create" | "project-open" | "asset-import" | "migration-export" | "project-import";
+export type SelectionPurpose = "project-create" | "project-open" | "asset-import";
 type Selection = { pageSessionId: string; purpose: SelectionPurpose; paths: string[]; identities: BigIntStats[]; expiresAt: number };
 
 function unchanged(a: BigIntStats, b: BigIntStats) {
@@ -18,7 +18,7 @@ export function createFileSelections() {
   let choosing = false;
   return {
     async choose(page: PageSession, purpose: SelectionPurpose, multiple: boolean, mediaKinds?: ("image" | "video" | "audio")[]) {
-      const directory = purpose === "project-create" || purpose === "project-open" || purpose === "migration-export";
+      const directory = purpose === "project-create" || purpose === "project-open";
       if (multiple && purpose !== "asset-import") throw new HostError("INVALID_ARGUMENT", 400, "This selection accepts one location.");
       const now = Date.now();
       for (const [id, item] of selections) if (item.expiresAt <= now) selections.delete(id);
@@ -74,44 +74,6 @@ export function createFileSelections() {
         })());
         return { input, metadata: { name: basename(paths[itemIndex]), mimeType: "", sizeBytes: Number(expected.size) },
           async close() { input.destroy(); await handle.close(); } };
-      } catch (error) { await handle.close(); throw error; }
-    },
-    async openPackage(page: PageSession, id: string) {
-      const paths = this.resolve(page, id, "project-import"), expected = selections.get(id)!.identities[0];
-      const changed = () => new HostError("REFERENCE_STALE", 409, "Selected project package changed. Select it again.");
-      const handle = await open(paths[0], constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-      let closed = false;
-      const streams = new Set<Readable>();
-      const verify = async () => {
-        if (closed || !unchanged(expected, await handle.stat({ bigint: true }))) throw changed();
-      };
-      try {
-        await verify();
-        if (expected.size < 22n || expected.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new HostError("PACKAGE_INTEGRITY_FAILED", 422, "Selected package size is unsupported.");
-        const sizeBytes = Number(expected.size);
-        return { sizeBytes, identity: [expected.dev, expected.ino, expected.size, expected.mtimeNs, expected.ctimeNs].map(String).join(":"), verify,
-          readRange(start: number, length: number) {
-            if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 0 || start > sizeBytes - length) throw changed();
-            const input = Readable.from((async function* () {
-              await verify();
-              let offset = start;
-              while (offset < start + length) {
-                const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, start + length - offset));
-                const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-                if (!bytesRead) throw changed();
-                offset += bytesRead; yield buffer.subarray(0, bytesRead);
-              }
-              await verify();
-            })());
-            streams.add(input); input.once("close", () => streams.delete(input));
-            return input;
-          },
-          async close() {
-            closed = true;
-            for (const stream of streams) stream.destroy();
-            await handle.close();
-          },
-        };
       } catch (error) { await handle.close(); throw error; }
     },
     clear() { selections.clear(); },

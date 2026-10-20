@@ -61,7 +61,12 @@ export async function openProjectFiles(root: string, executable: string) {
     child.stdout.resume();
     if (input) {
       try { await pipeline(input, child.stdin); }
-      catch (error) { child.kill(); await completed.catch(() => {}); throw error instanceof HostError ? error : new StorageIOError(); }
+      catch (error) {
+        child.kill();
+        let completionError: unknown;
+        await completed.catch(failure => { completionError = failure; });
+        throw error instanceof HostError ? error : completionError instanceof StorageIOError ? completionError : new StorageIOError();
+      }
     } else child.stdin.end();
     await completed;
   };
@@ -127,13 +132,10 @@ export async function openProjectFiles(root: string, executable: string) {
       await files.write(temporary, bytes);
       try { await (replace ? files.replace(temporary, path) : files.publish(temporary, path)); }
       catch (error) {
-        if (!replace && error instanceof StorageIOError && error.errno === 17) {
-          try {
-            if ((await files.read(path)).equals(bytes)) {
-              await files.remove({ path: temporary, sizeBytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
-            }
-          } catch { /* Preserve the publication error if verification or cleanup is unavailable. */ }
-        }
+        // The temporary name is never a committed reference. A confirmed or
+        // uncertain rename can leave it absent; preserve the original error.
+        try { await files.remove({ path: temporary, sizeBytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }); }
+        catch { /* Ownership loss or uncertain cleanup retains the temporary. */ }
         throw error;
       }
     },

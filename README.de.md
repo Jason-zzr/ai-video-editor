@@ -31,7 +31,7 @@ Für sämtliche rechtlichen Folgen eines Verstoßes gegen diese Anforderungen is
 
 ## Projektneuigkeiten
 
-- **2026-10-20** — Optionaler lokaler macOS-Host mit dauerhafter Projektspeicherung, Sitzungserneuerung und Wiederherstellung von Schreibzugriffen. Der Browsereditor bleibt verfügbar. [Einrichtung und Grenzen](docs/local-host.md).
+- **2026-10-20** — Optionaler lokaler macOS-Host mit dauerhafter Projektspeicherung, Sitzungserneuerung und Wiederherstellung von Schreib-Leases. Der Browsereditor bleibt verfügbar. [Einrichtung und Grenzen](docs/local-host.md).
 - **2026-10-19** — Die Vergleichsvorschau der KI-Wasserzeichenentfernung lässt sich nach dem Ende wieder abspielen.
 - **2026-10-17** — Zuordnungen von Untertiteln, Audio und Stickern beim Verschieben zwischen Bildclips sowie gemeinsames Löschen und Verschieben korrigiert; Positionssprünge bei Untertitelauswahl verhindert und Audioübersicht vereinfacht. Textauswahlen lassen sich pro Untertitel hervorheben, einfärben und löschen.
 - **2026-10-17** — Lokale Audioverarbeitung mit RNNoise, DeepFilterNet3, EQ, Kompression, Verstärkung und Limiter; Vorhören, Anwenden und Wiederherstellen des Originals. Verbesserte Quelltonansicht, Untertitelausrichtung und Schlüsselworthervorhebung, mehrsprachige Schriften, verknüpfte Bearbeitung und Wiedergabe an Clipgrenzen.

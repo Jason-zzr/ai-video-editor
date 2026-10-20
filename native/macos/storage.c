@@ -63,7 +63,7 @@ static int parent(int root, const char *path, char **name) {
 }
 
 static void sync_directory(int fd) {
-  if (fsync(fd) < 0) fail();
+  if (fsync(fd) < 0 || fcntl(fd, F_FULLFSYNC) < 0) fail();
 }
 
 static void regular(int fd) {
@@ -162,7 +162,25 @@ static void remove_verified(int source, const char *name, const char *size_text,
     after.st_size == before.st_size && after.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec &&
     after.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec && after.st_ctimespec.tv_sec == before.st_ctimespec.tv_sec &&
     after.st_ctimespec.tv_nsec == before.st_ctimespec.tv_nsec);
-  if (unlinkat(source, name, 0) < 0) fail();
+  /* Move into a fresh private namespace before deleting. If the named entry
+     raced with verification, preserve the quarantined entry and fail closed. */
+  unsigned char nonce[16];
+  arc4random_buf(nonce, sizeof(nonce));
+  char quarantine[80] = ".timeline-studio-remove-";
+  size_t prefix = strlen(quarantine);
+  for (size_t i = 0; i < sizeof(nonce); i++) snprintf(quarantine + prefix + i * 2, 3, "%02x", nonce[i]);
+  if (mkdirat(source, quarantine, 0700) < 0) fail();
+  int isolated = openat(source, quarantine, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (isolated < 0) fail();
+  if (renameatx_np(source, name, isolated, "object", RENAME_EXCL) < 0) fail();
+  sync_directory(isolated); sync_directory(source);
+  if (fstatat(isolated, "object", &named, AT_SYMLINK_NOFOLLOW) < 0) fail();
+  require(S_ISREG(named.st_mode) && named.st_nlink == 1 && named.st_dev == before.st_dev &&
+    named.st_ino == before.st_ino && named.st_size == before.st_size &&
+    named.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec && named.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec);
+  if (unlinkat(isolated, "object", 0) < 0) fail();
+  sync_directory(isolated); close(isolated);
+  if (unlinkat(source, quarantine, AT_REMOVEDIR) < 0) fail();
   sync_directory(source);
   close(fd);
 }
@@ -178,9 +196,19 @@ int main(int argc, char **argv) {
   close(filesystem);
   int activity = -1;
   const char *owner = getenv("TIMELINE_STUDIO_STORAGE_OWNER");
-  if (owner && (!strcmp(operation, "mkdir") || !strcmp(operation, "write") ||
+  int mutation = !strcmp(operation, "mkdir") || !strcmp(operation, "write") || !strcmp(operation, "publish") ||
+    !strcmp(operation, "replace") || !strcmp(operation, "remove") || !strcmp(operation, "sync");
+  if (mutation && (!owner || !*owner)) {
+    struct stat managed;
+    if (fstatat(root, "locks/project-write.lock", &managed, AT_SYMLINK_NOFOLLOW) == 0) {
+      /* Reopening a managed project may ensure its existing locks directory
+         before acquiring ownership. No other unowned mutation is permitted. */
+      if (strcmp(operation, "mkdir") || strcmp(argv[3], "locks")) { errno = EACCES; fail(); }
+    } else if (errno != ENOENT) fail();
+  }
+  if (owner && *owner && (!strcmp(operation, "mkdir") || !strcmp(operation, "write") ||
       !strcmp(operation, "publish") || !strcmp(operation, "replace") || !strcmp(operation, "remove") || !strcmp(operation, "sync"))) {
-    activity = activity_lock(root, LOCK_SH);
+    activity = activity_lock(root, LOCK_EX);
     verify_owner(root, owner);
   }
   char *name;

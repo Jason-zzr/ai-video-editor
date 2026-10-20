@@ -50,8 +50,8 @@ export function useSourceAudioExtraction(d) {
       d.replaceSourceAudio(blob, decoded.duration, decoded.peaks, sourceName, shouldAppend ? "视频原声已追加到时间线" : "视频原声已分离到时间线", timelineStart, shouldAppend ? "" : sourceAudioAssetId, { focusAudio: false });
       return { track: "source", segmentId: asset.id };
     } catch (error) {
-      const message = asset.projectMedia && error instanceof Error ? error.message : "视频画面已添加，但没有可分离的原声音轨";
-      console.warn(error); d.setStatus("ready"); d.setStatusText(asset.projectMedia ? message : "视频未检测到可分离原声");
+      const message = "视频画面已添加，但没有可分离的原声音轨";
+      console.warn(error); d.setStatus("ready"); d.setStatusText("视频未检测到可分离原声");
       d.setProgress(0); d.notify(message);
       return false;
     }
