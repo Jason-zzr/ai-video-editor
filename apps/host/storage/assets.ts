@@ -48,7 +48,7 @@ export async function receiveAsset(files: ProjectFiles, projectId: string, key: 
         bytes += chunk.length; digest.update(chunk); callback();
       } }));
       await files.remove({ path: stagingPath, sizeBytes: bytes, sha256: digest.digest("hex") });
-    } catch { /* Ownership loss preserves unconfirmed output for recovery. */ }
+    } catch { /* Ownership loss retains the file for manual inspection; no automatic sweep is claimed. */ }
   };
   let inspected: Awaited<ReturnType<typeof inspectMedia>>;
   let digest: string;

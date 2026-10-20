@@ -162,10 +162,10 @@ export function Topbar({
                       disabled={completeProject.status === "preparing" || completeProject.status === "saving"}
                       onClick={() => { setShowFileMenu(false); if (completeProject.projectId) void completeProject.save(); else setNamingProject(true); }}>
                       <span className="file-menu-icon"><FileArrowDown size={17} /></span>
-                      <span className="file-menu-copy"><strong>{completeProject.status === "error" ? ht("retry") : ht("save")}</strong></span>
+                      <span className="file-menu-copy"><strong>{completeProject.projectId && completeProject.status === "error" ? ht("retry") : ht("save")}</strong></span>
                     </button> : null}
                     {completeProject?.name ? <button className="file-menu-action" type="button"
-                      disabled={completeProject.busy() && completeProject.status !== "error"}
+                      disabled={!completeProject.canClose()}
                       onClick={() => { setShowFileMenu(false); void completeProject.closeProject(); }}>
                       <span className="file-menu-icon"><X size={17} /></span>
                       <span className="file-menu-copy"><strong>{ht("close")}</strong></span>
@@ -193,7 +193,7 @@ export function Topbar({
               <input ref={projectFileInputRef} className="project-file-input" type="file" accept="application/zip,.timeline" onChange={(event) => event.target.files?.[0] && handleImportProject(event.target.files[0])} />
             </div>
           </div>
-          <div className="autosave" title={completeProject?.error || undefined} role="status">
+          <div className="autosave" title={completeProject?.error || undefined} role={completeProject ? "status" : undefined}>
             <ShieldCheck size={13} weight="fill" />
             {completeProject ? completeProject.error || (completeProject.status === "opened" ? ht("opened") : completeProject.status === "dirty" ? ht("dirty") : completeProject.status === "preparing" ? ht("preparing") : completeProject.status === "saving"
               ? ht("saving") : completeProject.lastSaved ? `${completeProject.name} · ${ht("saved")} ${new Date(completeProject.lastSaved).toLocaleTimeString()}` : ht("unsaved"))

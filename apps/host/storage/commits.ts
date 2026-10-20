@@ -6,7 +6,6 @@ import { commitPath, commitRecord, encodeId, entryRecord, jsonBytes, normalizedB
   saveRecord, sha256, type Commit, type Entry, type Manifest, type Save } from "./records.ts";
 import { verifyObject } from "./objects.ts";
 import { retainProjectClosure, verifyProjectClosure } from "./closure.ts";
-import { collectProjectGarbage } from "./retention.ts";
 
 type Candidate = Pick<Manifest, "roots" | "objects" | "editorSnapshotId" | "editorSequence">;
 type Prepare = (current: Manifest | null, save: Save) => Promise<Candidate>;
@@ -249,7 +248,8 @@ export async function createProjectCommits(files: ProjectFiles, projectId: strin
       committing = true;
       await files.writeJson(commitPath(sequence, save.savePointId), record);
       await recover();
-      if (current && entry) await collectProjectGarbage(files, current, entry, [...requests.values()]);
+      // This host does not expose trash collection. Retain media and recovery
+      // records; opening/saving a project must not silently delete old output.
     } catch (error) {
       if (committing) {
         try {

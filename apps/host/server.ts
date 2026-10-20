@@ -226,6 +226,10 @@ export async function startHost(options: {
       editorSnapshot: { anyOf: [object({ ...snapshotProperties, schemaVersion: { const: 1 }, projectId: text }), { type: "null" }] } })) },
   }, async request => success(request, { ...projects.describe(pageFor(request), request.params.projectId),
     editorSnapshot: await projects.snapshot(pageFor(request), request.params.projectId) }));
+  app.get<{ Params: { projectId: string; requestId: string } }>("/api/v1/projects/:projectId/editor-snapshot-requests/:requestId", {
+    schema: { params: object({ projectId: text, requestId: { type: "string", minLength: 1, maxLength: 128 } }), querystring: emptyQuery,
+      response: responses(object({ receipt: { anyOf: [object({ ...saveProperties, replayed: { type: "boolean" } }), { type: "null" }] } })) },
+  }, async request => success(request, projects.snapshotRequest(pageFor(request), request.params.projectId, request.params.requestId)));
   app.post<{ Params: { projectId: string }; Body: SnapshotInput & { editorSessionId: string } }>("/api/v1/projects/:projectId/editor-snapshots", {
     bodyLimit: 63 * 1024 * 1024,
     schema: { querystring: emptyQuery, params: object({ projectId: text }), body: object({ ...snapshotProperties, editorSessionId: text }),

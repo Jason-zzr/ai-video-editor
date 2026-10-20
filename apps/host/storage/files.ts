@@ -41,7 +41,7 @@ export async function openProjectFiles(root: string, executable: string) {
     const completed = new Promise<void>((resolve, reject) => {
       child.once("error", () => reject(new StorageIOError()));
       child.once("close", code => {
-        if (mutation && writesStopped) return reject(ownershipLost());
+        if (mutation && writesStopped && code !== 0) return reject(ownershipLost());
         if (code === 0) return resolve();
         let errno: number | undefined;
         try { const value: unknown = JSON.parse(diagnostics); if (value && typeof value === "object" && "errno" in value && typeof value.errno === "number") errno = value.errno; } catch { /* Missing output is an unknown operation outcome. */ }
@@ -96,7 +96,7 @@ export async function openProjectFiles(root: string, executable: string) {
     },
     async list(path: string) {
       const bytes = await files.read(path, 16 * 1024 * 1024, "list");
-      return bytes.toString("utf8").split("\0").filter(Boolean).sort();
+      return bytes.toString("utf8").split("\0").filter(name => name && !name.startsWith(".timeline-studio-remove-")).sort();
     },
     stream(path: string, start: number, length: number) {
       if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(length) || length < 0) {

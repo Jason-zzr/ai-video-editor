@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,6 +7,25 @@ import { join } from "node:path";
 export type InstanceRecord = {
   instanceId: string; pid: number; startedAt: string; port: number; proofRef: string;
 };
+
+const execute = promisify(execFile);
+
+async function verifyListener(record: InstanceRecord) {
+  // Do not transmit an instance proof to a recycled loopback port. Both the
+  // listener's PID and its start time must match the private instance record.
+  if (process.platform !== "darwin") throw new Error("Instance verification requires macOS.");
+  const { stdout: listener } = await execute("/usr/sbin/lsof", ["-nP", "-a", "-p", String(record.pid), "-iTCP:" + record.port, "-sTCP:LISTEN", "-Fpn"], { timeout: 5000, maxBuffer: 16_384 });
+  const fields = listener.trim().split("\n");
+  if (!fields.includes(`p${record.pid}`) || !fields.includes(`n127.0.0.1:${record.port}`)) throw new Error("Instance listener changed.");
+  const { stdout: started } = await execute("/bin/ps", ["-p", String(record.pid), "-o", "lstart="], {
+    timeout: 5000, maxBuffer: 1024, env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+  });
+  const processStart = Date.parse(started.trim() + " UTC");
+  const instanceStart = Date.parse(record.startedAt);
+  if (!Number.isFinite(processStart) || !Number.isFinite(instanceStart) || instanceStart < processStart || instanceStart - processStart > 60_000) {
+    throw new Error("Instance process identity changed.");
+  }
+}
 
 async function readPrivateFile(path: string): Promise<string> {
   const info = await lstat(path);
@@ -25,6 +46,7 @@ export async function claimInstance(directory: string) {
           !Number.isInteger(record.pid) || record.pid <= 0 || typeof record.startedAt !== "string" ||
           !Number.isInteger(record.port) || record.port < 1 || record.port > 65535 ||
           record.proofRef !== "proof" || proof.length !== 64) throw new Error("Invalid instance identity.");
+      await verifyListener(record);
       const response = await fetch(`http://127.0.0.1:${record.port}/internal/v1/launcher/reopen`, {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
         headers: { "Content-Type": "application/json", "X-Timeline-Studio-Protocol-Version": "1", Authorization: `Instance ${proof}` },
@@ -89,7 +111,8 @@ export async function claimInstance(directory: string) {
     }
     try { await rmdir(lock); }
     catch (error) {
-      await writeFile(ownerPath, JSON.stringify(owner), { flag: "wx", mode: 0o600 }).catch(() => {});
+      try { await writeFile(ownerPath, JSON.stringify(owner), { flag: "wx", mode: 0o600 }); }
+      catch (restoreError) { throw new AggregateError([error, restoreError], "Instance cleanup failed and its owner record could not be restored."); }
       throw error;
     }
   };

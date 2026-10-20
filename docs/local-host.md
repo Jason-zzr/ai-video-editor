@@ -35,7 +35,8 @@ Portable `.timeline` import/export remains available. Close a bound local projec
 before importing a portable project, so autosave cannot overwrite it. Complete-project
 migration and trash-management interfaces are not part of this integration.
 The imported storage implementation retains its supporting record types; migration
-and destructive trash routes are not exposed in this runtime. This is not a new public stable API or a promise of cross-platform
+and destructive trash routes are not exposed in this runtime. Saving never
+automatically collects old media. This is not a new public stable API or a promise of cross-platform
 project-package compatibility.
 
 ## Sessions and recovery
@@ -56,7 +57,10 @@ project-package compatibility.
   is unknown. Only a confirmed failed save gets a new key. Completed model or
   remote processing jobs are never rerun by lease recovery.
 - For a project conflict, export the current work as `.timeline` if needed,
-  then explicitly close/open the project. Opening or closing replaces the
+  then explicitly close/open the project. A still-unknown save must first be
+  reconciled by reading its original request receipt; no snapshot is posted
+  after a project conflict. A missing receipt stays unknown; an error alone does
+  not permit closing or switching projects. Opening or closing replaces the
   timeline only after confirmation. Stopping the host is explicit and is
   blocked while this page has pending work; other pages must be checked by the
   user before stopping the shared service.

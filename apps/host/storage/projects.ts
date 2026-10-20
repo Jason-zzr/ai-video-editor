@@ -9,9 +9,6 @@ import { commitRecord, emptyRoots, entryRecord } from "./records.ts";
 import { createEditorSessions } from "./editor-sessions.ts";
 import { prepareSnapshot, readSnapshot, snapshotInput, validateSnapshot, type SnapshotInput } from "./snapshots.ts";
 import { importMetadata, prepareAsset, readAsset, receiveAsset, receivedAssets, receiptRecord, type ImportMetadata } from "./assets.ts";
-import { prepareTrash, trashRequest, emptyTrashSelection, emptyTrashDigest, prepareEmptyTrash, validateEmptyTrash,
-  type EmptyTrashSelection, type TrashRequest } from "./trash.ts";
-import { collectProjectGarbage, inspectRetention } from "./retention.ts";
 
 type Project = { projectId: string; name: string; files: Awaited<ReturnType<typeof openProjectFiles>>;
   commits: Awaited<ReturnType<typeof createProjectCommits>>;
@@ -25,7 +22,6 @@ export function createProjects(instanceId: string, executable: string) {
   let pendingOperations = 0;
   const importing = new Set<string>();
   const importWaiters = new Set<() => void>();
-  const trashConfirmations = new Map<string, { pageSessionId: string; directory: string; projectId: string; digest: string; expiresAt: number }>();
   const serialize = <T>(action: () => Promise<T>) => {
     pendingOperations++;
     const result = tail.then(action).finally(() => { pendingOperations--; });
@@ -44,7 +40,7 @@ export function createProjects(instanceId: string, executable: string) {
         idempotencyKey: recovery.key, request: recovery.choice, editorSnapshotId: null, editorSequence: null }, prepareRecovery(files, projectId)) : null;
       for (const save of commits.pending()) {
         if (!["queued", "writing"].includes(commits.get(save.saveId).status)) continue;
-        const prepare = save.route === "trash-empty" ? prepareEmptyTrash(files) : save.route === "project-trash" ? prepareTrash(files, projectId) : save.route === "project-recovery" ? prepareRecovery(files, projectId) : save.route === "editor-snapshots" ? prepareSnapshot(files, projectId) :
+        const prepare = save.route === "project-recovery" ? prepareRecovery(files, projectId) : save.route === "editor-snapshots" ? prepareSnapshot(files, projectId) :
           ["asset-imports", "result-registrations"].includes(save.route) ? prepareAsset(files, projectId) : null;
         if (!prepare) { commits.stopWrites(); break; }
         await commits.resume(save.saveId, prepare);
@@ -216,6 +212,12 @@ export function createProjects(instanceId: string, executable: string) {
       const project = get(page, projectId);
       return readSnapshot(project.files, project.commits.current());
     },
+    snapshotRequest(page: PageSession, projectId: string, key: string) {
+      const project = get(page, projectId);
+      const save = project.commits.requests().find(item => item.route === "editor-snapshots" && item.idempotencyKey === key);
+      return { receipt: save ? { saveId: save.saveId, status: save.status, editorSnapshotId: save.editorSnapshotId,
+        editorSequence: save.editorSequence, replayed: true } : null };
+    },
     async saveSnapshot(page: PageSession, projectId: string, editorSessionId: string, idempotencyKey: string, value: SnapshotInput) {
       active();
       const project = get(page, projectId), input = snapshotInput.parse(value);
@@ -269,78 +271,6 @@ export function createProjects(instanceId: string, executable: string) {
       const items = [];
       for (const id of selected) items.push(await readAsset(project.files, current, id));
       return { items, cursor: index + 101 < ids.length ? selected.at(-1)! : null };
-    },
-    async changeTrash(page: PageSession, projectId: string, editorSessionId: string, key: string, value: TrashRequest) {
-      active();
-      const project = get(page, projectId), input = trashRequest.parse(value);
-      editors.requireWrite(page, editorSessionId, projectId);
-      const accepted = await project.commits.accept({ route: "project-trash", subject: projectId, idempotencyKey: key,
-        request: input, editorSnapshotId: null, editorSequence: null }, prepareTrash(project.files, projectId), current => {
-        editors.requireWrite(page, editorSessionId, projectId);
-        const ref = input.action === "delete" ? current?.roots.assets.find(item => item.entityId === input.assetId)
-          : current?.roots.trash.find(item => item.entityId === input.tombstoneId);
-        if (!ref || ref.revision !== input.revision) throw new HostError("REVISION_CONFLICT", 409, "The selected entity revision changed.");
-      });
-      return { saveId: accepted.save.saveId, tombstoneId: input.action === "delete" ? accepted.save.saveId : input.tombstoneId, replayed: accepted.replayed };
-    },
-    async trash(page: PageSession, projectId: string, after?: string) {
-      const project = get(page, projectId);
-      const entries = (await project.commits.maintain((current, entry, requests) => inspectRetention(project.files, current, entry, requests))).items
-        .sort((a, b) => a.tombstoneId < b.tombstoneId ? -1 : a.tombstoneId > b.tombstoneId ? 1 : 0);
-      const index = after ? entries.findIndex(item => item.tombstoneId === after) : -1;
-      if (after && index < 0) throw new HostError("INVALID_CURSOR", 400, "The trash cursor is no longer available.");
-      const items = entries.slice(index + 1, index + 101);
-      return { items, cursor: index + 101 < entries.length ? items.at(-1)!.tombstoneId : null };
-    },
-    async retryCollection(page: PageSession, projectId: string, editorSessionId: string, key: string) {
-      active();
-      const project = get(page, projectId);
-      editors.requireWrite(page, editorSessionId, projectId);
-      return project.commits.maintain(async (current, entry, requests) => {
-        editors.requireWrite(page, editorSessionId, projectId);
-        const result = (await collectProjectGarbage(project.files, current, entry, requests, key))!;
-        return { gcId: result.plan.gcId, savePointId: result.plan.savePointId, replayed: result.replayed,
-          removed: result.plan.targets.filter(item => item.status === "removed").length,
-          absent: result.plan.targets.filter(item => item.status === "absent").length,
-          pending: result.plan.targets.filter(item => item.status === "pending").length,
-          protected: result.plan.targets.filter(item => item.status === "protected").length };
-      });
-    },
-    async confirmEmptyTrash(page: PageSession, projectId: string, editorSessionId: string, value: EmptyTrashSelection) {
-      active();
-      const project = get(page, projectId);
-      editors.requireWrite(page, editorSessionId, projectId);
-      const input = await validateEmptyTrash(project.files, project.commits.current(), value);
-      for (const [id, confirmation] of trashConfirmations) if (confirmation.expiresAt <= Date.now()) trashConfirmations.delete(id);
-      if (trashConfirmations.size >= 128) throw new HostError("RESOURCE_BUSY", 429, "Too many pending confirmations.");
-      const confirmationId = randomUUID(), expiresAt = Math.min(Date.now() + 60_000, Date.parse(page.expiresAt));
-      trashConfirmations.set(confirmationId, { pageSessionId: page.pageSessionId, directory: project.files.directory, projectId, digest: input.digest, expiresAt });
-      return { confirmationId, expiresAt: new Date(expiresAt).toISOString() };
-    },
-    async emptyTrash(page: PageSession, projectId: string, editorSessionId: string, value: EmptyTrashSelection, confirmationId: string, key: string) {
-      active();
-      const project = get(page, projectId), input = emptyTrashSelection.parse(value);
-      editors.requireWrite(page, editorSessionId, projectId);
-      if (emptyTrashDigest(projectId, input.items) !== input.digest || new Set(input.items.map(item => item.tombstoneId)).size !== input.items.length) {
-        throw new HostError("REFERENCE_STALE", 409, "Review the exact trash selection again.");
-      }
-      input.items.sort((a, b) => a.tombstoneId < b.tombstoneId ? -1 : a.tombstoneId > b.tombstoneId ? 1 : 0);
-      const accepted = await project.commits.accept({ route: "trash-empty", subject: projectId, idempotencyKey: key,
-        request: input, editorSnapshotId: null, editorSequence: null }, prepareEmptyTrash(project.files), current => {
-        editors.requireWrite(page, editorSessionId, projectId);
-        const confirmation = trashConfirmations.get(confirmationId);
-        if (!confirmation || confirmation.pageSessionId !== page.pageSessionId || confirmation.directory !== project.files.directory ||
-            confirmation.projectId !== projectId || confirmation.digest !== input.digest || confirmation.expiresAt <= Date.now()) {
-          throw new HostError("USER_CONFIRMATION_REQUIRED", 403, "Confirm this exact trash selection in the current page.");
-        }
-        for (const selected of input.items) {
-          if (!current?.roots.trash.some(ref => ref.entityId === selected.tombstoneId && ref.revision === selected.revision)) {
-            throw new HostError("REFERENCE_STALE", 409, "A selected trash entry changed.");
-          }
-        }
-        trashConfirmations.delete(confirmationId);
-      });
-      return { saveId: accepted.save.saveId, replayed: accepted.replayed };
     },
     async asset(page: PageSession, projectId: string, assetId: string) {
       const project = get(page, projectId);
@@ -405,7 +335,7 @@ export function createProjects(instanceId: string, executable: string) {
         project.commits.stopWrites();
         await project.release();
       }));
-      projects.clear(); editors.clear(); trashConfirmations.clear();
+      projects.clear(); editors.clear();
       const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
       if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Some project locks could not be released.");
     },

@@ -5,12 +5,12 @@ import { waitForHostMediaController } from "../lib/serviceWorker.js";
 
 const PROJECT_BINDING_KEY = "timeline-studio.project-binding";
 
-export function useCompleteProject({ hostSession, captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject }) {
+export function useCompleteProject({ hostSession, captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject, projectFileInputRef }) {
   const ht = (key) => hostText(language, key);
   const [state, setState] = useState({ status: "unbound", name: "", pending: 0, lastSaved: null, error: "" });
   const binding = useRef(null);
   const creating = useRef(false);
-  const latest = useRef({ captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject });
+  const latest = useRef({ captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify, language, handleImportProject, projectFileInputRef });
   latest.current = { captureCompleteProject, prepareCompleteProject, handleNewProject, isEditorBusy, notify };
   const operationVersion = useRef(0);
   const recoveryAttempt = useRef(null);
@@ -96,6 +96,12 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
       }
       if (!current.lease || Date.parse(current.lease.expiresAt) <= Date.now()) await acquire(current);
       ensureOperation(version);
+      if (current.conflict && current.queue?.hasUnknownOutcome()) {
+        // After a project conflict, only read the existing receipt. Replaying
+        // a POST could overwrite a deliberately restored older project basis.
+        void current.queue.reconcileUnknown();
+        return;
+      }
       if (current.conflict) {
         throw Object.assign(new Error("Reopen the current project before saving again."), { code: "PROJECT_REVISION_CONFLICT" });
       }
@@ -120,7 +126,7 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
   const open = async (resumeProjectId = null) => {
     if (!hostSession || creating.current) return;
     const previous = binding.current;
-    if (((pendingCapture.current || previous?.queue?.busy()) && state.status !== "error") || latest.current.isEditorBusy?.()) {
+    if ((pendingCapture.current || (previous?.queue?.busy() && !(previous.conflict && previous.queue.canAbandonUnsubmitted()))) || latest.current.isEditorBusy?.()) {
       latest.current.notify(ht("wait")); return;
     }
     if (!resumeProjectId && !window.confirm(ht("openConfirm"))) return;
@@ -215,7 +221,7 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
     if (creating.current) return;
     const current = binding.current;
     if (closeCurrent && !current) return;
-    if (((pendingCapture.current || current?.queue?.busy()) && state.status !== "error") || latest.current.isEditorBusy?.()) {
+    if ((pendingCapture.current || (current?.queue?.busy() && !(current.conflict && current.queue.canAbandonUnsubmitted()))) || latest.current.isEditorBusy?.()) {
       latest.current.notify(ht("wait")); return;
     }
     if (!window.confirm(ht(closeCurrent ? "closeConfirm" : "newConfirm"))) return;
@@ -335,7 +341,10 @@ export function useCompleteProject({ hostSession, captureCompleteProject, prepar
   }, [acquire, hostSession]);
 
   return hostSession ? { ...state,
+    canClose: () => !creating.current && !pendingCapture.current && (!binding.current?.queue?.busy() ||
+      Boolean(binding.current.conflict && binding.current.queue.canAbandonUnsubmitted())),
     importPortable: (file) => {
+      if (projectFileInputRef.current) projectFileInputRef.current.value = "";
       if (binding.current || creating.current) { notify(ht("importBound")); return; }
       return handleImportProject(file);
     }, error: binding.current?.conflict ? hostErrorText(language, { code: "PROJECT_REVISION_CONFLICT" }) : state.error ? hostErrorText(language, { code: state.errorCode }) : "", save, open, projectId: binding.current?.project.projectId,

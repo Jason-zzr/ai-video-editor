@@ -51,7 +51,7 @@ export function createEditorSessions() {
       prune();
       const session = sessions.get(id);
       if (!session) return;
-      if (session.pageSessionId !== page.pageSessionId) throw new HostError("AUTH_REQUIRED", 403, "The lease belongs to another page.");
+      if (session.pageSessionId !== page.pageSessionId) throw new HostError("EDITOR_SESSION_EXPIRED", 409, "The lease belongs to another page.");
       sessions.delete(id);
     },
     writable(page: PageSession) {

@@ -14,16 +14,16 @@ export async function claimProject(files: ProjectFiles, projectId: string, insta
   let expected = "";
   try {
     expected = (await files.read(path, 4096)).toString("utf8");
-    const previous = ownerSchema.parse(JSON.parse(expected));
-    if (previous.projectId !== projectId) throw new Error("Owner project mismatch.");
-    if (!previous.released) {
+    const previous = expected.length ? ownerSchema.parse(JSON.parse(expected)) : null;
+    if (previous && previous.projectId !== projectId) throw new Error("Owner project mismatch.");
+    if (previous && !previous.released && previous.pid !== process.pid) {
       // PID alone never permits takeover: the native kernel lock and exact owner bytes
       // must also match after acquisition. A reused/alive PID is conservatively refused.
       try { process.kill(previous.pid, 0); throw new Error("Owner is still alive."); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
     }
   } catch (error) {
-    if (error instanceof StorageIOError && error.errno !== 2) throw error;
+    if (error instanceof StorageIOError && error.errno !== 2) throw new HostError("PROJECT_OWNER_UNAVAILABLE", 503, "Project ownership could not be verified; retry without rolling back the project.");
     if (!(error instanceof StorageIOError && error.errno === 2)) {
       throw new HostError("PROJECT_WRITE_LOCKED", 409, "The previous project owner cannot be safely released.");
     }
@@ -33,7 +33,7 @@ export async function claimProject(files: ProjectFiles, projectId: string, insta
   try {
     return await files.lock(path, { expected, active: JSON.stringify(owner), released: JSON.stringify({ ...owner, released: true }) }, onLost);
   } catch (error) {
-    if (error instanceof StorageIOError && ![11, 22, 35, 70, 116].includes(error.errno ?? -1)) throw error;
+    if (error instanceof StorageIOError && ![11, 22, 35, 70, 116].includes(error.errno ?? -1)) throw new HostError("PROJECT_OWNER_UNAVAILABLE", 503, "Project ownership could not be acquired; retry without rolling back the project.");
     throw new HostError("PROJECT_WRITE_LOCKED", 409, "The project is locked or ownership changed during acquisition.");
   }
 }

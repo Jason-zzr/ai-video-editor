@@ -324,10 +324,8 @@ int main(int argc, char **argv) {
     free(target_name);
   } else if (!strcmp(operation, "lock")) {
     require(argc == 7);
-    int created = 1;
     int fd = openat(source, name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (fd < 0 && errno == EEXIST) {
-      created = 0;
       fd = openat(source, name, O_RDWR | O_NOFOLLOW | O_CLOEXEC);
     }
     if (fd < 0) fail();
@@ -337,7 +335,7 @@ int main(int argc, char **argv) {
     char previous[4096];
     ssize_t previous_length = pread(fd, previous, sizeof(previous), 0);
     if (previous_length < 0) fail();
-    require((created || previous_length > 0) && (size_t)previous_length == strlen(argv[4]) &&
+    require((size_t)previous_length == strlen(argv[4]) &&
       !memcmp(previous, argv[4], (size_t)previous_length));
     write_owner(fd, argv[5]);
     sync_directory(source);

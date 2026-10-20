@@ -92,12 +92,24 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
     try {
       while (pending.length && !closed) {
         const job = pending[0];
+        if (!job.receipt) getEditorSessionId();
         job.snapshot ??= await serializeProjectSnapshot(job.captured, {
           editorSnapshotId: job.snapshotId, editorSequence: job.sequence,
           registerMedia: (source, name, path) => registerMedia(source, name, path, controller.signal),
         });
-        job.receipt ??= await request(`${endpoint}/editor-snapshots`,
-          { ...job.snapshot, editorSessionId: getEditorSessionId() }, job.key, controller.signal);
+        if (!job.receipt) {
+          const editorSessionId = getEditorSessionId();
+          const alreadyUnknown = Boolean(job.unknownOutcome);
+          job.unknownOutcome = true;
+          try {
+            job.receipt = await request(`${endpoint}/editor-snapshots`, { ...job.snapshot, editorSessionId }, job.key, controller.signal);
+            job.unknownOutcome = false;
+          } catch (error) {
+            const rejected = ["EDITOR_SESSION_EXPIRED", "SESSION_EXPIRED", "AUTH_REQUIRED", "WRITE_SESSION_REQUIRED", "INVALID_ARGUMENT", "OUT_OF_ORDER_SNAPSHOT", "REFERENCE_INVALID"].includes(error?.code);
+            if (rejected && !alreadyUnknown) job.unknownOutcome = false;
+            throw error;
+          }
+        }
         for (;;) {
           const saved = await request(`/api/v1/saves/${encodeURIComponent(job.receipt.saveId)}`, undefined, undefined, controller.signal);
           if (saved.editorSnapshotId !== job.snapshotId || saved.editorSequence !== job.sequence) {
@@ -116,7 +128,7 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
           await waitForPoll(controller.signal);
         }
       }
-      publish({ status: "idle" });
+      if (!closed) publish({ status: "idle" });
     } catch (error) {
       publish({ status: closed ? "closed" : "error", error: error instanceof Error ? error.message : "项目保存中断，请重试。", errorCode: error?.code || "" });
     } finally { active = null; }
@@ -133,6 +145,24 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
       if (snapshot.status !== "error") void pump();
       return sequence;
     },
+    async reconcileUnknown() {
+      if (closed || active || !pending[0]?.unknownOutcome) return;
+      const job = pending[0], controller = new AbortController();
+      active = controller; publish({ status: "saving", error: "", errorCode: "" });
+      try {
+        const result = await request(`${endpoint}/editor-snapshot-requests/${encodeURIComponent(job.key)}`, undefined, undefined, controller.signal);
+        if (closed) return;
+        if (!result.receipt) throw Object.assign(new Error("The save outcome is still unknown; current edits are retained."), { code: "SAVE_OUTCOME_UNKNOWN" });
+        if (result.receipt.editorSnapshotId !== job.snapshotId || result.receipt.editorSequence !== job.sequence) {
+          throw Object.assign(new Error("The save receipt does not match this snapshot."), { code: "SAVE_RECEIPT_MISMATCH" });
+        }
+        job.receipt = result.receipt; job.unknownOutcome = false;
+        active = null;
+        await pump();
+      } catch (error) {
+        publish({ status: closed ? "closed" : "error", error: error.message, errorCode: error?.code || "" });
+      } finally { if (active === controller) active = null; }
+    },
     retry() {
       if (closed || active) return;
       // Only a confirmed pre-commit failure permits a new request identity.
@@ -141,6 +171,8 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
       }
       void pump();
     },
+    hasUnknownOutcome: () => pending.some(job => job.unknownOutcome),
+    canAbandonUnsubmitted: () => !active && pending.every(job => job.failed || (!job.receipt && !job.unknownOutcome)),
     ownsPendingSnapshot: (id, sequence) => pending.some(job => job.snapshotId === id && job.sequence === sequence),
     busy: () => pending.length > 0 || active !== null,
     close() { closed = true; active?.abort(new Error("项目保存已停止。")); publish({ status: "closed" }); listeners.clear(); },

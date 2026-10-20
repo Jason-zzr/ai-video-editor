@@ -22,7 +22,7 @@ export async function connectHostSession() {
     try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* Memory-only storage remains supported. */ }
   };
   const request = async (path, body, key, options = {}) => {
-    if (!path.startsWith("/api/v1/") || new URL(path, location.origin).origin !== location.origin) {
+    if (!path.startsWith("/api/v1/") || new URL(path, location.origin).origin !== location.origin || !new URL(path, location.origin).pathname.startsWith("/api/v1/")) {
       throw new Error("Invalid local service path.");
     }
     const headers = { "Content-Type": "application/json", "X-Timeline-Studio-Protocol-Version": "1" };

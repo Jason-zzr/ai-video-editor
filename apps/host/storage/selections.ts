@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, realpath, open } from "node:fs/promises";
-import { constants, type BigIntStats } from "node:fs";
+import { constants, lstatSync, realpathSync, type BigIntStats } from "node:fs";
 import { Readable } from "node:stream";
 import { basename } from "node:path";
 import { selectLocalPaths } from "../../launcher/platform.ts";
@@ -49,6 +49,16 @@ export function createFileSelections() {
       if (!selection || selection.pageSessionId !== page.pageSessionId || selection.purpose !== purpose ||
           selection.expiresAt <= Date.now() || Date.parse(page.expiresAt) <= Date.now()) {
         throw new HostError("SELECTION_EXPIRED", 409, "Select the location again.");
+      }
+      if (purpose === "project-create" || purpose === "project-open") {
+        try {
+          for (let index = 0; index < selection.paths.length; index++) {
+            const path = selection.paths[index], info = lstatSync(path, { bigint: true }), selected = selection.identities[index];
+            if (!info.isDirectory() || info.isSymbolicLink() || info.dev !== selected.dev || info.ino !== selected.ino || realpathSync(path) !== path) {
+              throw new Error("Directory identity changed.");
+            }
+          }
+        } catch { throw new HostError("REFERENCE_STALE", 409, "The selected directory changed; select it again."); }
       }
       return [...selection.paths];
     },

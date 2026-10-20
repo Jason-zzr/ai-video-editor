@@ -1399,7 +1399,7 @@ export function App({ hostSession = null }) {
     sourceAudioAssetId, sourceAudioLinked, sourceAudioName, sourceAudioStart, sourceAudioVolume, sourceAudioSpatialEffect, sourceAudioSpatialAmount, speed, stickerSegments,
     timelineZoom, trackLocks, trackVisibility, visualSegments, visualOverlaySegments, volume,
   });
-  const completeProject = useCompleteProject({ hostSession, language: activeLanguage, captureCompleteProject, prepareCompleteProject, handleNewProject, handleImportProject, notify,
+  const completeProject = useCompleteProject({ hostSession, language: activeLanguage, captureCompleteProject, prepareCompleteProject, handleNewProject, handleImportProject, projectFileInputRef, notify,
     isEditorBusy: () => isEditorBusy() || webMcp.isAiRunning() || generationPlugins.job.running });
 
   const {
