@@ -1,15 +1,19 @@
 import { decodeWaveform } from "./media.js";
+import { loadProjectMediaBlob, isProjectMediaBlob } from "./projectSnapshot.js";
 
 export function createAssetLibraryActions(deps) {
   async function selectAsset(asset, options = {}) {
     if (asset.type === "audio") {
-      if (!asset.blob) return void deps.notify("当前音频素材不可用，请重新上传");
+      let blob;
+      try { blob = await loadProjectMediaBlob(asset); }
+      catch (error) { console.warn("Audio asset could not be loaded", error); deps.notify(deps.t?.("audioAssetUnavailable") || "Audio asset unavailable"); return; }
+      asset.blob = blob;
       const hasValidDuration = Number.isFinite(Number(asset.duration)) && Number(asset.duration) > 0;
       const decoded = asset.peaks?.length && hasValidDuration
         ? { duration: Number(asset.duration), peaks: asset.peaks }
-        : await decodeWaveform(asset.blob, 96);
+        : await decodeWaveform(blob, 96);
       deps.replaceMusic(
-        asset.blob,
+        blob,
         decoded.duration,
         decoded.peaks,
         asset.name,
@@ -30,7 +34,7 @@ export function createAssetLibraryActions(deps) {
     if (!urlInUse && deps.imageUrlRefs.current.has(asset.src)) {
       URL.revokeObjectURL(asset.src); deps.imageUrlRefs.current.delete(asset.src);
     }
-    if (asset.type === "audio" && asset.blob === deps.musicBlob) {
+    if (asset.type === "audio" && ((asset.blob && asset.blob === deps.musicBlob) || isProjectMediaBlob(asset, deps.musicBlob))) {
       deps.clearMusicTrack("背景音乐素材已删除，时间线已同步清空");
       return;
     }

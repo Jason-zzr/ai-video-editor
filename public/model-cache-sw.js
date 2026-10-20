@@ -365,7 +365,55 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(migratePreviousVoiceRevision().catch(() => {}));
 });
 
+function isProjectMedia(url) {
+  const parts = url.pathname.split("/");
+  return url.origin === self.location.origin && parts.length === 8 && parts[1] === "api" &&
+    parts[2] === "v1" && parts[3] === "projects" && parts[4] && parts[5] === "assets" &&
+    parts[6] && parts[7] === "content";
+}
+
+async function projectMedia(event) {
+  const client = event.clientId && await self.clients.get(event.clientId);
+  if (!client || client.type !== "window" || new URL(client.url).origin !== self.location.origin) {
+    return new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  const bearer = await new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const requestId = crypto.randomUUID();
+    let timer;
+    const finish = (value) => {
+      clearTimeout(timer);
+      event.request.signal.removeEventListener("abort", abort);
+      channel.port1.close(); channel.port2.close();
+      resolve(value);
+    };
+    const abort = () => finish(null);
+    channel.port1.onmessage = ({ data }) => {
+      if (data?.requestId === requestId) finish(typeof data.bearer === "string" ? data.bearer : null);
+    };
+    timer = setTimeout(() => finish(null), 15_000);
+    event.request.signal.addEventListener("abort", abort, { once: true });
+    if (event.request.signal.aborted) { finish(null); return; }
+    try { client.postMessage({ type: "TIMELINE_STUDIO_MEDIA_CREDENTIAL", requestId }, [channel.port2]); }
+    catch { finish(null); }
+  });
+  if (!bearer) return new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+  const headers = new Headers(event.request.headers);
+  headers.set("Authorization", `Bearer ${bearer}`);
+  headers.set("X-Timeline-Studio-Protocol-Version", "1");
+  return fetch(event.request.url, { method: event.request.method, headers,
+    mode: "same-origin", credentials: "omit", redirect: "error", cache: "no-store", signal: event.request.signal });
+}
+
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if ((event.request.method === "GET" || event.request.method === "HEAD") && isProjectMedia(url)) {
+    event.respondWith(projectMedia(event));
+    return;
+  }
+  if (url.origin === self.location.origin && (url.pathname === "/healthz" ||
+      url.pathname === "/api" || url.pathname.startsWith("/api/") ||
+      url.pathname === "/internal" || url.pathname.startsWith("/internal/"))) return;
   if (event.request.mode === "navigate") {
     event.respondWith(networkFirst(event.request));
     return;
@@ -379,6 +427,10 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "TIMELINE_STUDIO_MEDIA_READY") {
+    event.ports[0]?.postMessage({ type: "TIMELINE_STUDIO_MEDIA_READY", requestId: event.data.requestId });
+    return;
+  }
   if (event.data?.type !== "CLEAR_MODEL_CACHE") {
     return;
   }

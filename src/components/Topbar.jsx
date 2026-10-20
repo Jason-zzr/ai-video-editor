@@ -15,10 +15,13 @@ import {
   Play,
   ShieldCheck,
   SlidersHorizontal,
+  X,
   XLogo,
 } from "@phosphor-icons/react";
 
 import { RATIO_OPTIONS } from "../config/editor.js";
+import { LocalProjectNameDialog } from "./LocalProjectNameDialog.jsx";
+import { hostText } from "../i18nHost.js";
 import { APP_LANGUAGES, saveLanguagePreference } from "../i18n.js";
 import { getPrimaryShortcutModifier, releasePointerActivatedFocus } from "../lib/editorShortcuts.js";
 import { formatStorageBytes, inspectModelCache } from "../lib/modelCacheInspection.js";
@@ -32,6 +35,8 @@ const COMMUNITY_LINKS = Object.freeze({
 });
 
 export function Topbar({
+  hostService = null,
+  completeProject = null,
   t,
   compactRail,
   setCompactRail,
@@ -69,6 +74,8 @@ export function Topbar({
   handleImportProject,
   projectFileInputRef,
 }) {
+  const ht = (key) => hostText(activeLanguage, key);
+  const [namingProject, setNamingProject] = useState(false);
   const exportAnchorRef = useRef(null);
   const ratioAnchorRef = useRef(null);
   const settingsAnchorRef = useRef(null);
@@ -120,13 +127,15 @@ export function Topbar({
 
   return (
     <header className="topbar">
+      {namingProject && completeProject ? <LocalProjectNameDialog language={activeLanguage}
+        onClose={() => setNamingProject(false)} onSave={name => { setNamingProject(false); void completeProject.save(name); }} /> : null}
       <div className="project-cluster">
         <IconButton label={t("collapseSidebar")} active={compactRail} onClick={() => setCompactRail((v) => !v)}>
           <SlidersHorizontal size={19} />
         </IconButton>
         <div>
           <div className="project-title-row">
-            <div className="project-title">{t("projectTitle")}</div>
+            <div className="project-title">{completeProject?.name || t("projectTitle")}</div>
             <div className="menu-anchor">
               <button className="project-file-button" type="button" onClick={() => setShowFileMenu((open) => !open)}>
                 {t("fileMenu")} <CaretDown size={13} />
@@ -143,6 +152,24 @@ export function Topbar({
                       <span className="file-menu-copy"><strong>{t("newProject")}</strong><small>{t("newProjectHint")}</small></span>
                     </button>
                     <div className="file-menu-divider" />
+                    {completeProject ? <button className="file-menu-action" type="button"
+                      disabled={completeProject.status === "preparing" || completeProject.status === "saving"}
+                      onClick={() => { setShowFileMenu(false); void completeProject.open(); }}>
+                      <span className="file-menu-icon"><FileArrowUp size={17} /></span>
+                      <span className="file-menu-copy"><strong>{ht("open")}</strong></span>
+                    </button> : null}
+                    {completeProject ? <button className="file-menu-action" type="button"
+                      disabled={completeProject.status === "preparing" || completeProject.status === "saving"}
+                      onClick={() => { setShowFileMenu(false); if (completeProject.projectId) void completeProject.save(); else setNamingProject(true); }}>
+                      <span className="file-menu-icon"><FileArrowDown size={17} /></span>
+                      <span className="file-menu-copy"><strong>{completeProject.projectId && completeProject.status === "error" ? ht("retry") : ht("save")}</strong></span>
+                    </button> : null}
+                    {completeProject?.name ? <button className="file-menu-action" type="button"
+                      disabled={!completeProject.canClose()}
+                      onClick={() => { setShowFileMenu(false); void completeProject.closeProject(); }}>
+                      <span className="file-menu-icon"><X size={17} /></span>
+                      <span className="file-menu-copy"><strong>{ht("close")}</strong></span>
+                    </button> : null}
                     <button className="file-menu-action" type="button" onClick={() => handleImportProject()}>
                       <span className="file-menu-icon"><FileArrowUp size={17} /></span>
                       <span className="file-menu-copy"><strong>{t("importProject")}</strong><small>{t("importProjectHint")}</small></span>
@@ -166,9 +193,11 @@ export function Topbar({
               <input ref={projectFileInputRef} className="project-file-input" type="file" accept="application/zip,.timeline" onChange={(event) => event.target.files?.[0] && handleImportProject(event.target.files[0])} />
             </div>
           </div>
-          <div className="autosave">
+          <div className="autosave" title={completeProject?.error || undefined} role={completeProject ? "status" : undefined}>
             <ShieldCheck size={13} weight="fill" />
-            {t("autosave")} · {lastSaved}
+            {completeProject ? completeProject.error || (completeProject.status === "opened" ? ht("opened") : completeProject.status === "dirty" ? ht("dirty") : completeProject.status === "preparing" ? ht("preparing") : completeProject.status === "saving"
+              ? ht("saving") : completeProject.lastSaved ? `${completeProject.name} · ${ht("saved")} ${new Date(completeProject.lastSaved).toLocaleTimeString()}` : ht("unsaved"))
+              : <>{t("autosave")} · {lastSaved}</>}
           </div>
         </div>
       </div>
@@ -218,6 +247,7 @@ export function Topbar({
       </div>
 
       <div className="topbar-actions">
+        {hostService}
         <nav className="topbar-community-links" aria-label={t("communityLinks", "社区链接")}>
           <a
             href={COMMUNITY_LINKS.discord}
