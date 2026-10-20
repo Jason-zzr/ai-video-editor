@@ -22,6 +22,8 @@ This desktop preview plans from metadata, without analyzing video frames or audi
 
 → [Try Timeline Studio on Anna](https://anna.partners/store/@martindelophy/timeline-studio)
 
+<img src="docs/images/wechat-feedback-qr.png" alt="WeChat group QR code" width="280" />
+
 ## Responsible use of deep synthesis
 
 This tool uses deep-synthesis technology and is intended solely for technical research and learning.
