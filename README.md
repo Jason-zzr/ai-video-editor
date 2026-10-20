@@ -22,6 +22,10 @@ This desktop preview plans from metadata, without analyzing video frames or audi
 
 → [Try Timeline Studio on Anna](https://anna.partners/store/@martindelophy/timeline-studio)
 
+遇到任何问题，欢迎扫码进群交流。我们急需你的建议和反馈！
+
+Run into any issues? Scan the QR code to join our WeChat group. We really need your suggestions and feedback!
+
 <img src="docs/images/wechat-feedback-qr.png" alt="WeChat group QR code" width="280" />
 
 ## Responsible use of deep synthesis
