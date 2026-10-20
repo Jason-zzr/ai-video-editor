@@ -56,7 +56,7 @@ export async function inspectWebResources(root: string) {
       throw new Error(`Required editor resource missing: ${name}`);
     }
   }
-  return { files, html: html.replace("</head>", '<meta name="autocut-host" content="1"></head>'),
+  return { files, html: html.replace("</head>", '<meta name="timeline-studio-host" content="1"></head>'),
     components: [
       { identity: "node", version: process.versions.node, platform: process.platform,
         state: "available", detail: "Current Node runtime; packaged runtime not verified." },

@@ -145,7 +145,7 @@ export function createProjects(instanceId: string, executable: string) {
           throw new HostError("INVALID_ARGUMENT", 400, "Choose a valid project folder name.");
         }
         const parentFiles = await openProjectFiles(parent, executable);
-        const projectId = randomUUID(), temporary = `.autocut-create-${projectId}`;
+        const projectId = randomUUID(), temporary = `.timeline-studio-create-${projectId}`;
         await parentFiles.mkdir(temporary);
         const project = await initialize(join(parentFiles.directory, temporary), projectId);
         try {

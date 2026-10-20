@@ -33,8 +33,8 @@ export async function openProjectFiles(root: string, executable: string) {
     const mutation = ["mkdir", "write", "publish", "replace", "remove", "sync"].includes(operation);
     if (mutation && writesStopped) throw ownershipLost();
     const env = { ...process.env };
-    delete env.AUTOCUT_STORAGE_OWNER;
-    if (mutation && owner) env.AUTOCUT_STORAGE_OWNER = owner;
+    delete env.TIMELINE_STUDIO_STORAGE_OWNER;
+    if (mutation && owner) env.TIMELINE_STUDIO_STORAGE_OWNER = owner;
     const child = spawn(executable, [operation, directory, ...paths.map(relativePath), ...arguments_], { stdio: ["pipe", "pipe", "pipe"], env });
     let diagnostics = "";
     child.stderr.on("data", (chunk: Buffer) => { if (diagnostics.length < 1024) diagnostics += chunk.toString("utf8"); });

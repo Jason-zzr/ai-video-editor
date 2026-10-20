@@ -49,7 +49,7 @@ export async function preparePackageSource(files: ProjectFiles, projectId: strin
         (commit.recoveredFromSavePointId && !points.has(commit.recoveredFromSavePointId))) throw invalid();
     points.add(commit.savePointId); saves.add(commit.saveId);
   }
-  const manifest = packageManifestRecord.parse({ schemaVersion: 1, format: "autocut-project", appVersion, projectSchemaVersion: 1,
+  const manifest = packageManifestRecord.parse({ schemaVersion: 1, format: "timeline-studio-project", appVersion, projectSchemaVersion: 1,
     projectId, savePointId: pin.savePointId, createdAt: pin.createdAt,
     entries: [...records.values()].map(object => ({ ...object, path: `project/${object.path}` })) });
   return { manifest, source(path: string) {

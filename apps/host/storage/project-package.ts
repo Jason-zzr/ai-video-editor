@@ -23,7 +23,7 @@ function validPath(path: string) {
 }
 
 const packageEntry = objectRecord.pick({ path: true, sizeBytes: true, sha256: true });
-export const packageManifestRecord = z.strictObject({ schemaVersion: z.literal(1), format: z.literal("autocut-project"),
+export const packageManifestRecord = z.strictObject({ schemaVersion: z.literal(1), format: z.literal("timeline-studio-project"),
   appVersion: z.string().min(1).max(64), projectSchemaVersion: z.literal(1), projectId: z.string().min(1).max(256),
   savePointId: z.string().min(1).max(256), createdAt: z.iso.datetime(), entries: z.array(packageEntry).max(MAX_ENTRIES - 1) });
 export type PackageManifest = z.infer<typeof packageManifestRecord>;

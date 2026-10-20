@@ -1399,7 +1399,7 @@ export function App({ hostSession = null }) {
     sourceAudioAssetId, sourceAudioLinked, sourceAudioName, sourceAudioStart, sourceAudioVolume, sourceAudioSpatialEffect, sourceAudioSpatialAmount, speed, stickerSegments,
     timelineZoom, trackLocks, trackVisibility, visualSegments, visualOverlaySegments, volume,
   });
-  const completeProject = useCompleteProject({ hostSession, captureCompleteProject, prepareCompleteProject, handleNewProject, notify,
+  const completeProject = useCompleteProject({ hostSession, language: activeLanguage, captureCompleteProject, prepareCompleteProject, handleNewProject, notify,
     isEditorBusy: () => isEditorBusy() || webMcp.isAiRunning() || generationPlugins.job.running });
 
   const {
@@ -1523,7 +1523,7 @@ export function App({ hostSession = null }) {
   });
   const isEditorBusy = () => Boolean(projectImportProgress || exporting || timelineClipDragRef.current || pointerAssetDragRef.current ||
     isDragging || draggedAssetId || ["generating", "captioning"].includes(status) || visualSegments.some((clip) => clip.preparing) ||
-    visualOverlaySegments.some((clip) => clip.preparing) || visionJob.running || avatarJob.running || autoEdit.job.running);
+    visualOverlaySegments.some((clip) => clip.preparing) || visionJob.running || avatarJob.running || autoEdit.job.running || cinematicDepth.job.running || photoParallaxDepth.job.running);
   const webMcp = useWebMcpEditor({
     language: activeLanguage, visualSegments, visualOverlaySegments, audioSegments, musicSegments,
     sourceAudioBlob, musicBlob, audioBlob, rippleEditing, getProjectSnapshot,

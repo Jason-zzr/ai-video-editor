@@ -52,7 +52,7 @@ export async function finishExportPublication(value: ExportPublication, executab
   signal?.throwIfAborted();
   const receipt = exportPublicationRecord.parse(value), name = targetName(receipt.name);
   if (receipt.temporary.includes("/") || receipt.temporary.includes("\\") ||
-      !receipt.temporary.startsWith(`.${name}.autocut-export-`)) throw new HostError("PROJECT_INVALID", 409, "Invalid export publication receipt.");
+      !receipt.temporary.startsWith(`.${name}.timeline-studio-export-`)) throw new HostError("PROJECT_INVALID", 409, "Invalid export publication receipt.");
   const files = await openProjectFiles(receipt.parent, executable);
   const matches = async (path: string) => {
     let size = 0;
@@ -80,11 +80,11 @@ export async function exportProjectPackage(parent: string, requestedName: string
   source: { manifest: PackageManifest; source(path: string): Readable },
   beforePublish?: (receipt: ExportPublication) => Promise<void>, signal?: AbortSignal) {
   signal?.throwIfAborted();
-  const name = targetName(requestedName.endsWith(".autocut-project") ? requestedName : `${requestedName}.autocut-project`);
+  const name = targetName(requestedName.endsWith(".timeline-studio-project") ? requestedName : `${requestedName}.timeline-studio-project`);
   const required = source.manifest.entries.reduce((sum, entry) => sum + BigInt(entry.sizeBytes) + BigInt(Buffer.byteLength(entry.path) * 2 + 256), 0n)
     + BigInt(Buffer.byteLength(JSON.stringify(source.manifest))) + 1024n;
   const files = await prepareDestination(parent, name, executable, required);
-  const temporary = `.${name}.autocut-export-${randomUUID()}`;
+  const temporary = `.${name}.timeline-studio-export-${randomUUID()}`;
   const archive = await writeProjectPackage(files, temporary, source.manifest, source.source, signal);
   const zip = await openProjectPackage(archive.sizeBytes, (start, length) => files.stream(temporary, start, length));
   try { await zip.verify(signal); } finally { zip.close(); }
@@ -103,7 +103,7 @@ export async function importProjectPackage(parent: string, requestedName: string
   try {
     const required = BigInt(zip.totalBytes) + BigInt(zip.manifest.entries.length) * 4096n;
     const files = await prepareDestination(parent, name, executable, required);
-    const temporary = `.${name}.autocut-import-${randomUUID()}`;
+    const temporary = `.${name}.timeline-studio-import-${randomUUID()}`;
     await files.mkdir(temporary);
     const target = await openProjectFiles(join(files.directory, temporary), executable);
     await zip.extract(target, signal);
@@ -121,7 +121,7 @@ export type ImportPublication = z.infer<typeof importPublicationRecord>;
 
 export async function finishImportPublication(value: ImportPublication, executable: string, signal?: AbortSignal) {
   const receipt = importPublicationRecord.parse(value), name = targetName(receipt.name);
-  if (receipt.temporary.includes("/") || receipt.temporary.includes("\\") || !receipt.temporary.startsWith(`.${name}.autocut-import-`)) {
+  if (receipt.temporary.includes("/") || receipt.temporary.includes("\\") || !receipt.temporary.startsWith(`.${name}.timeline-studio-import-`)) {
     throw new HostError("PROJECT_INVALID", 409, "Invalid import publication receipt.");
   }
   const parent = await openProjectFiles(receipt.parent, executable);

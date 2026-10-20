@@ -18,7 +18,7 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
   let sequence = editorSequence;
   let active = null;
   let closed = false;
-  let snapshot = { status: "idle", pending: 0, savedSequence: editorSequence, lastSaved: null, error: "" };
+  let snapshot = { status: "idle", pending: 0, savedSequence: editorSequence, lastSaved: null, error: "", errorCode: "" };
   const publish = (changes) => {
     snapshot = { ...snapshot, ...changes, pending: pending.length };
     for (const listener of listeners) listener();
@@ -88,7 +88,7 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
     if (closed || active || !pending.length) return;
     const controller = new AbortController();
     active = controller;
-    publish({ status: "saving", error: "" });
+    publish({ status: "saving", error: "", errorCode: "" });
     try {
       while (pending.length && !closed) {
         const job = pending[0];
@@ -118,7 +118,7 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
       }
       publish({ status: "idle" });
     } catch (error) {
-      publish({ status: closed ? "closed" : "error", error: error instanceof Error ? error.message : "项目保存中断，请重试。" });
+      publish({ status: closed ? "closed" : "error", error: error instanceof Error ? error.message : "项目保存中断，请重试。", errorCode: error?.code || "" });
     } finally { active = null; }
   }
 
@@ -141,6 +141,7 @@ export function createProjectSaveQueue({ hostSession, projectId, getEditorSessio
       }
       void pump();
     },
+    ownsPendingSnapshot: (id, sequence) => pending.some(job => job.snapshotId === id && job.sequence === sequence),
     busy: () => pending.length > 0 || active !== null,
     close() { closed = true; active?.abort(new Error("项目保存已停止。")); publish({ status: "closed" }); listeners.clear(); },
   };

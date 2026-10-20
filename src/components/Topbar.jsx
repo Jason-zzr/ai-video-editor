@@ -20,12 +20,12 @@ import {
 } from "@phosphor-icons/react";
 
 import { RATIO_OPTIONS } from "../config/editor.js";
+import { LocalProjectNameDialog } from "./LocalProjectNameDialog.jsx";
+import { hostText } from "../i18nHost.js";
 import { APP_LANGUAGES, saveLanguagePreference } from "../i18n.js";
 import { getPrimaryShortcutModifier, releasePointerActivatedFocus } from "../lib/editorShortcuts.js";
 import { formatStorageBytes, inspectModelCache } from "../lib/modelCacheInspection.js";
 import { ExportSettingsPanel } from "./ExportSettingsPanel.jsx";
-import { ProjectStoragePanel } from "./ProjectStoragePanel.jsx";
-import { ProjectMigrationPanel } from "./ProjectMigrationPanel.jsx";
 import { IconButton, Popover } from "./ui.jsx";
 
 const COMMUNITY_LINKS = Object.freeze({
@@ -74,13 +74,13 @@ export function Topbar({
   handleImportProject,
   projectFileInputRef,
 }) {
+  const ht = (key) => hostText(activeLanguage, key);
+  const [namingProject, setNamingProject] = useState(false);
   const exportAnchorRef = useRef(null);
   const ratioAnchorRef = useRef(null);
   const settingsAnchorRef = useRef(null);
   const modelCacheControlRef = useRef(null);
   const [modelCacheInspection, setModelCacheInspection] = useState({ state: "idle", result: null });
-  const [showProjectStorage, setShowProjectStorage] = useState(false);
-  const [showProjectMigration, setShowProjectMigration] = useState(false);
   const shortcutModifier = getPrimaryShortcutModifier();
   const shortcutRows = [
     ["markersAdd", "M"],
@@ -127,8 +127,8 @@ export function Topbar({
 
   return (
     <header className="topbar">
-      {showProjectStorage && completeProject?.projectId ? <ProjectStoragePanel key={completeProject.projectId} project={completeProject} onClose={() => setShowProjectStorage(false)} /> : null}
-      {showProjectMigration && completeProject ? <ProjectMigrationPanel project={completeProject} onClose={() => setShowProjectMigration(false)} /> : null}
+      {namingProject && completeProject ? <LocalProjectNameDialog language={activeLanguage}
+        onClose={() => setNamingProject(false)} onSave={name => { setNamingProject(false); void completeProject.save(name); }} /> : null}
       <div className="project-cluster">
         <IconButton label={t("collapseSidebar")} active={compactRail} onClick={() => setCompactRail((v) => !v)}>
           <SlidersHorizontal size={19} />
@@ -156,29 +156,19 @@ export function Topbar({
                       disabled={completeProject.status === "preparing" || completeProject.status === "saving"}
                       onClick={() => { setShowFileMenu(false); void completeProject.open(); }}>
                       <span className="file-menu-icon"><FileArrowUp size={17} /></span>
-                      <span className="file-menu-copy"><strong>打开完整项目</strong></span>
+                      <span className="file-menu-copy"><strong>{ht("open")}</strong></span>
                     </button> : null}
                     {completeProject ? <button className="file-menu-action" type="button"
                       disabled={completeProject.status === "preparing" || completeProject.status === "saving"}
-                      onClick={() => { setShowFileMenu(false); void completeProject.save(); }}>
+                      onClick={() => { setShowFileMenu(false); if (completeProject.projectId) void completeProject.save(); else setNamingProject(true); }}>
                       <span className="file-menu-icon"><FileArrowDown size={17} /></span>
-                      <span className="file-menu-copy"><strong>{completeProject.status === "error" ? "重试完整项目保存" : "保存完整项目"}</strong></span>
-                    </button> : null}
-                    {completeProject ? <button className="file-menu-action" type="button"
-                      onClick={() => { setShowFileMenu(false); setShowProjectMigration(true); }}>
-                      <span className="file-menu-copy"><strong>完整项目导入 / 导出</strong></span>
-                    </button> : null}
-                    {completeProject?.projectId ? <button className="file-menu-action" type="button"
-                      disabled={completeProject.storageBusy}
-                      onClick={() => { setShowFileMenu(false); setShowProjectStorage(true); }}>
-                      <span className="file-menu-icon"><Database size={17} /></span>
-                      <span className="file-menu-copy"><strong>项目素材与回收站</strong></span>
+                      <span className="file-menu-copy"><strong>{completeProject.status === "error" ? ht("retry") : ht("save")}</strong></span>
                     </button> : null}
                     {completeProject?.name ? <button className="file-menu-action" type="button"
-                      disabled={completeProject.busy()}
+                      disabled={completeProject.busy() && completeProject.status !== "error"}
                       onClick={() => { setShowFileMenu(false); void completeProject.closeProject(); }}>
                       <span className="file-menu-icon"><X size={17} /></span>
-                      <span className="file-menu-copy"><strong>关闭完整项目</strong></span>
+                      <span className="file-menu-copy"><strong>{ht("close")}</strong></span>
                     </button> : null}
                     <button className="file-menu-action" type="button" onClick={() => handleImportProject()}>
                       <span className="file-menu-icon"><FileArrowUp size={17} /></span>
@@ -205,8 +195,8 @@ export function Topbar({
           </div>
           <div className="autosave" title={completeProject?.error || undefined} role="status">
             <ShieldCheck size={13} weight="fill" />
-            {completeProject ? completeProject.error || (completeProject.status === "opened" ? "已打开保存的项目" : completeProject.status === "dirty" ? "有未保存的修改" : completeProject.status === "preparing" ? "正在准备完整项目…" : completeProject.status === "saving"
-              ? "正在保存完整项目…" : completeProject.lastSaved ? `${completeProject.name} · 已保存 ${new Date(completeProject.lastSaved).toLocaleTimeString()}` : "尚未保存完整项目")
+            {completeProject ? completeProject.error || (completeProject.status === "opened" ? ht("opened") : completeProject.status === "dirty" ? ht("dirty") : completeProject.status === "preparing" ? ht("preparing") : completeProject.status === "saving"
+              ? ht("saving") : completeProject.lastSaved ? `${completeProject.name} · ${ht("saved")} ${new Date(completeProject.lastSaved).toLocaleTimeString()}` : ht("unsaved"))
               : <>{t("autosave")} · {lastSaved}</>}
           </div>
         </div>

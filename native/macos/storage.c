@@ -177,7 +177,7 @@ int main(int argc, char **argv) {
   int root = directory(filesystem, argv[2] + 1);
   close(filesystem);
   int activity = -1;
-  const char *owner = getenv("AUTOCUT_STORAGE_OWNER");
+  const char *owner = getenv("TIMELINE_STUDIO_STORAGE_OWNER");
   if (owner && (!strcmp(operation, "mkdir") || !strcmp(operation, "write") ||
       !strcmp(operation, "publish") || !strcmp(operation, "replace") || !strcmp(operation, "remove") || !strcmp(operation, "sync"))) {
     activity = activity_lock(root, LOCK_SH);

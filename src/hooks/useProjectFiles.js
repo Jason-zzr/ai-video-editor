@@ -7,6 +7,7 @@ import { normalizeSmartFrame } from "../lib/smartFrame.js";
 import { normalizeTrackLocks, normalizeTrackVisibility } from "../lib/projectTrackState.js";
 import { normalizeTimelineMarkers } from "../lib/timelineMarkers.js";
 import { PROJECT_IMPORT_COPY } from "../i18nProjectImport.js";
+import { hostText } from "../i18nHost.js";
 import { captureProjectState, loadProjectMediaBlob, restoreProjectSnapshot } from "../lib/projectSnapshot.js";
 
 const waitForProjectPaint = () => new Promise((resolve) => {
@@ -129,7 +130,7 @@ export function useProjectFiles(deps) {
     deps.setSelectedStickerSegmentId(""); deps.clearAllVisionState(); deps.setCurrentTime(0);
     deps.setTimelineHorizon(DEFAULT_TIMELINE_DURATION_SECONDS); deps.setTimelineZoom(1);
     if (options.complete) { deps.setUserAssets([]); deps.resetHistory(); }
-    deps.setShowFileMenu(false); deps.notify(options.closed ? "已关闭完整项目" : "已新建空白工程");
+    deps.setShowFileMenu(false); deps.notify(options.complete ? hostText(deps.language, options.closed ? "closed" : "created") : "已新建空白工程");
   }, [deps]);
 
   const handleImportProject = useCallback(async (file) => {

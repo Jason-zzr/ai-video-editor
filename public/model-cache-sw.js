@@ -394,13 +394,13 @@ async function projectMedia(event) {
     timer = setTimeout(() => finish(null), 3000);
     event.request.signal.addEventListener("abort", abort, { once: true });
     if (event.request.signal.aborted) { finish(null); return; }
-    try { client.postMessage({ type: "AUTOCUT_MEDIA_CREDENTIAL", requestId }, [channel.port2]); }
+    try { client.postMessage({ type: "TIMELINE_STUDIO_MEDIA_CREDENTIAL", requestId }, [channel.port2]); }
     catch { finish(null); }
   });
   if (!bearer) return new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
   const headers = new Headers(event.request.headers);
   headers.set("Authorization", `Bearer ${bearer}`);
-  headers.set("X-AutoCut-Protocol-Version", "1");
+  headers.set("X-Timeline-Studio-Protocol-Version", "1");
   return fetch(event.request.url, { method: event.request.method, headers,
     mode: "same-origin", credentials: "omit", redirect: "error", cache: "no-store", signal: event.request.signal });
 }
@@ -427,8 +427,8 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "AUTOCUT_MEDIA_READY") {
-    event.ports[0]?.postMessage({ type: "AUTOCUT_MEDIA_READY", requestId: event.data.requestId });
+  if (event.data?.type === "TIMELINE_STUDIO_MEDIA_READY") {
+    event.ports[0]?.postMessage({ type: "TIMELINE_STUDIO_MEDIA_READY", requestId: event.data.requestId });
     return;
   }
   if (event.data?.type !== "CLEAR_MODEL_CACHE") {

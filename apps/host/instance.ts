@@ -27,7 +27,7 @@ export async function claimInstance(directory: string) {
           record.proofRef !== "proof" || proof.length !== 64) throw new Error("Invalid instance identity.");
       const response = await fetch(`http://127.0.0.1:${record.port}/internal/v1/launcher/reopen`, {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
-        headers: { "Content-Type": "application/json", "X-AutoCut-Protocol-Version": "1", Authorization: `Instance ${proof}` },
+        headers: { "Content-Type": "application/json", "X-Timeline-Studio-Protocol-Version": "1", Authorization: `Instance ${proof}` },
         body: JSON.stringify({ instanceId: record.instanceId }),
       });
       const result = await response.json();

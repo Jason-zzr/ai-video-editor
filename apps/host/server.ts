@@ -71,9 +71,9 @@ export async function startHost(options: {
   const sessions = createSessions(options.instanceId);
   const events = createEvents(options.instanceId);
   const lifecycle = createLifecycle(options.instanceId);
-  const projects = createProjects(options.instanceId, options.storageExecutable ?? join(dirname(options.dist), "autocut-storage"));
+  const projects = createProjects(options.instanceId, options.storageExecutable ?? join(dirname(options.dist), "timeline-studio-storage"));
   const selections = createFileSelections();
-  const imports = options.machineDirectory ? await createMigrationImports(options.machineDirectory, options.storageExecutable ?? join(dirname(options.dist), "autocut-storage")) : null;
+  const imports = options.machineDirectory ? await createMigrationImports(options.machineDirectory, options.storageExecutable ?? join(dirname(options.dist), "timeline-studio-storage")) : null;
   app.addContentTypeParser("application/octet-stream", (_request, payload, done) => done(null, payload));
   const requestSessions = new WeakMap<FastifyRequest, PageSession>();
   let origin = "";
@@ -93,7 +93,7 @@ export async function startHost(options: {
     if (!ready || lifecycle.state() !== "Active") throw new HostError("SERVICE_NOT_READY", 503, "Service is not accepting browser launches.");
     const nonce = sessions.nonce();
     try { await options.openBrowser(`${origin}/#bootstrap=${nonce}&instance=${options.instanceId}`); }
-    catch { throw new HostError("COMPONENT_NOT_READY", 503, "The browser could not be opened. Check ego lite on macOS or Chrome on Windows and run the launcher again."); }
+    catch { throw new HostError("COMPONENT_NOT_READY", 503, "The browser could not be opened. Check Chrome and run the launcher again."); }
   };
   const stop = () => {
     closing ??= (async () => {
@@ -138,7 +138,7 @@ export async function startHost(options: {
     const internal = path === "/internal" || path.startsWith("/internal/");
     if (!browserApi && !internal) return;
     reply.header("Cache-Control", "no-store");
-    if (request.headers["x-autocut-protocol-version"] !== "1") {
+    if (request.headers["x-timeline-studio-protocol-version"] !== "1") {
       throw new HostError("PROTOCOL_VERSION_UNSUPPORTED", 400, "Protocol version 1 is required.");
     }
     const contentType = request.headers["content-type"]?.split(";")[0].trim().toLowerCase();
@@ -253,7 +253,7 @@ export async function startHost(options: {
     schema: { params: object({ projectId: text }), querystring: emptyQuery,
       response: { 202: object({ ok: { const: true }, data: object({ taskId: text, stepId: text, saveId: text, replayed: { type: "boolean" } }), meta }), "4xx": errorEnvelope, "5xx": errorEnvelope } },
   }, async (request, reply) => {
-    const key = request.headers["idempotency-key"], encoded = request.headers["x-autocut-import-metadata"];
+    const key = request.headers["idempotency-key"], encoded = request.headers["x-timeline-studio-import-metadata"];
     if (typeof key !== "string" || !key.length || key.length > 128) {
       throw new HostError("INVALID_ARGUMENT", 400, "Idempotency-Key is required.");
     }
@@ -488,7 +488,7 @@ export async function startHost(options: {
       response: responses(object({ state: { const: "Draining" }, replayed: { type: "boolean" } })) },
     onResponse: async (_request, reply) => {
       if (reply.statusCode === 200) setImmediate(() => { void stop().catch(() => {
-        console.error("Auto-cut could not finish instance cleanup. Inspect the previous instance before restarting.");
+        console.error("Timeline Studio could not finish instance cleanup. Inspect the previous instance before restarting.");
         process.exitCode = 1;
       }); });
     },

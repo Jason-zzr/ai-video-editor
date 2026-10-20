@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.jsx";
 import { registerModelCacheServiceWorker } from "./lib/serviceWorker.js";
 import { connectHostSession } from "./lib/hostSession.js";
+import { getStoredLanguage } from "./i18n.js";
+import { hostErrorText } from "./i18nHost.js";
 import "./styles.css";
 
 registerModelCacheServiceWorker();
@@ -17,6 +19,6 @@ void connectHostSession().then((hostSession) => {
 }).catch((error) => {
   const message = document.createElement("p");
   message.setAttribute("role", "alert");
-  message.textContent = error instanceof Error ? error.message : "Auto-cut page session could not be opened.";
+  message.textContent = hostErrorText(getStoredLanguage(), error);
   rootElement.replaceChildren(message);
 });

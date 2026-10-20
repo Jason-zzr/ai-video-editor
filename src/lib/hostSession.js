@@ -1,7 +1,7 @@
-const STORAGE_KEY = "autocut.page-session";
+const STORAGE_KEY = "timeline-studio.page-session";
 
 export async function connectHostSession() {
-  if (!document.querySelector('meta[name="autocut-host"][content="1"]')) return null;
+  if (!document.querySelector('meta[name="timeline-studio-host"][content="1"]')) return null;
   const listeners = new Set();
   let snapshot = { connection: "connecting", session: null, components: [], error: "" };
   let credential = null;
@@ -24,7 +24,7 @@ export async function connectHostSession() {
     if (!path.startsWith("/api/v1/") || new URL(path, location.origin).origin !== location.origin) {
       throw new Error("Invalid local service path.");
     }
-    const headers = { "Content-Type": "application/json", "X-AutoCut-Protocol-Version": "1" };
+    const headers = { "Content-Type": "application/json", "X-Timeline-Studio-Protocol-Version": "1" };
     if (credential) headers.Authorization = `Bearer ${credential.bearer}`;
     if (key) headers["Idempotency-Key"] = key;
     if (options.revision !== undefined) {
@@ -34,9 +34,9 @@ export async function connectHostSession() {
     if (options.metadata) {
       headers["Content-Type"] = "application/octet-stream";
       const bytes = new TextEncoder().encode(JSON.stringify(options.metadata));
-      headers["X-AutoCut-Import-Metadata"] = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
+      headers["X-Timeline-Studio-Import-Metadata"] = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
         .replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-      if (headers["X-AutoCut-Import-Metadata"].length > 8192) throw new Error("Import metadata is too large.");
+      if (headers["X-Timeline-Studio-Import-Metadata"].length > 8192) throw new Error("Import metadata is too large.");
     }
     const signal = options.signal || AbortSignal.timeout(options.metadata ? 300_000 : path === "/api/v1/file-selections" ? 130_000 : 10_000);
     const method = options.method || (body === undefined ? "GET" : "POST");
@@ -94,13 +94,13 @@ export async function connectHostSession() {
   }
   if (!credential || typeof credential.bearer !== "string" ||
       !Number.isFinite(Date.parse(credential.expiresAt)) || Date.parse(credential.expiresAt) <= Date.now()) {
-    forget(); throw new Error("请从 Auto-cut 启动器重新打开页面。当前链接无有效会话。 / Reopen from the Auto-cut launcher.");
+    forget(); throw new Error("请从 Timeline Studio 启动器重新打开页面。当前链接无有效会话。 / Reopen from the Timeline Studio launcher.");
   }
   await refresh();
 
   const mediaCredential = (event) => {
     if (event.source !== navigator.serviceWorker?.controller ||
-        event.data?.type !== "AUTOCUT_MEDIA_CREDENTIAL" ||
+        event.data?.type !== "TIMELINE_STUDIO_MEDIA_CREDENTIAL" ||
         typeof event.data.requestId !== "string" || !event.ports[0]) return;
     const port = event.ports[0];
     port.postMessage({ requestId: event.data.requestId,
@@ -119,7 +119,7 @@ export async function connectHostSession() {
       if (closed || !credential) return;
       connectionTimer = setTimeout(() => streamController.abort(), 10_000);
       const response = await fetch(`/api/v1/events${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`, {
-        headers: { Authorization: `Bearer ${credential.bearer}`, "X-AutoCut-Protocol-Version": "1", "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${credential.bearer}`, "X-Timeline-Studio-Protocol-Version": "1", "Content-Type": "application/json" },
         mode: "same-origin", credentials: "omit", redirect: "error", cache: "no-store", signal: streamController.signal,
       });
       clearTimeout(connectionTimer);

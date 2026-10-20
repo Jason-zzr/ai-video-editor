@@ -51,9 +51,9 @@ export async function waitForHostMediaController() {
     };
     const timer = setTimeout(() => finish(new Error("项目媒体服务需要更新，请重新打开页面。")), 3000);
     channel.port1.onmessage = ({ data }) => {
-      if (data?.type === "AUTOCUT_MEDIA_READY" && data.requestId === requestId) finish();
+      if (data?.type === "TIMELINE_STUDIO_MEDIA_READY" && data.requestId === requestId) finish();
     };
-    try { controller.postMessage({ type: "AUTOCUT_MEDIA_READY", requestId }, [channel.port2]); }
+    try { controller.postMessage({ type: "TIMELINE_STUDIO_MEDIA_READY", requestId }, [channel.port2]); }
     catch (error) { finish(error); }
   });
 }

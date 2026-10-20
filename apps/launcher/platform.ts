@@ -13,7 +13,7 @@ export async function selectLocalPaths(kind: "file" | "directory", multiple: boo
     const app = Application.currentApplication();
     app.includeStandardAdditions = true;
     try {
-      const options = { withPrompt: "选择 Auto-cut 项目或素材", multipleSelectionsAllowed: args[1] === "true" };
+      const options = { multipleSelectionsAllowed: args[1] === "true" };
       const kinds = JSON.parse(args[2]);
       if (args[0] === "file" && kinds.length) options.ofType = kinds;
       const result = args[0] === "directory" ? app.chooseFolder(options) : app.chooseFile(options);
@@ -39,18 +39,18 @@ export async function selectLocalPaths(kind: "file" | "directory", multiple: boo
 
 export async function machineDirectory(): Promise<string> {
   if (Number(process.versions.node.split(".")[0]) !== 24) {
-    throw new Error("Auto-cut host requires Node 24. No runtime was installed automatically.");
+    throw new Error("Timeline Studio host requires Node 24. No runtime was installed automatically.");
   }
   const base = process.platform === "darwin"
     ? join(homedir(), "Library", "Application Support")
     : process.platform === "win32" ? process.env.LOCALAPPDATA : undefined;
   if (!base || !isAbsolute(base)) throw new Error("Unsupported platform or missing user data directory.");
-  const directory = join(base, "Auto-cut");
+  const directory = join(base, "Timeline Studio");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const info = await lstat(directory);
-  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Unsafe Auto-cut data directory.");
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Unsafe Timeline Studio data directory.");
   if (process.platform === "darwin") {
-    if (info.uid !== process.getuid?.()) throw new Error("Auto-cut data directory belongs to another user.");
+    if (info.uid !== process.getuid?.()) throw new Error("Timeline Studio data directory belongs to another user.");
     await chmod(directory, 0o700);
   } else {
     const systemRoot = process.env.SystemRoot;
@@ -65,7 +65,7 @@ export async function machineDirectory(): Promise<string> {
 
 export async function openBrowser(url: string): Promise<void> {
   if (process.platform === "darwin") {
-    await execute("/usr/bin/open", ["-b", "com.citrolabs.ego.lite", url], { timeout: 10_000 });
+    await execute("/usr/bin/open", ["-b", "com.google.Chrome", url], { timeout: 10_000 });
     return;
   }
   if (process.platform !== "win32") throw new Error("This platform is not supported.");
@@ -83,5 +83,5 @@ export async function openBrowser(url: string): Promise<void> {
     });
     return;
   }
-  throw new Error("Google Chrome was not found. Install it before reopening Auto-cut.");
+  throw new Error("Google Chrome was not found. Install it before reopening Timeline Studio.");
 }

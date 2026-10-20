@@ -51,12 +51,8 @@ export async function prepareEmbeddedVideoAudio(visualSegments = [], onProgress,
     });
     try {
       const sourceBlob = await loadProjectMediaBlob(segment, "blob", signal);
-      if (!response.ok) throw new Error(`无法读取视频素材：${response.status}`);
-              return response.blob();
-            })
-          : null;
       if (!sourceBlob) continue;
-      if (!(segment.compatibilityAudioBlob instanceof Blob)) {
+      if (!(segment.compatibilityAudioBlob instanceof Blob) && !segment.projectMedia?.bindings?.compatibilityAudioBlob) {
         const remuxed = await remuxEmbeddedAudio(sourceBlob, signal).catch((error) => {
           throwIfExportAborted(signal);
           console.warn("Audio packet extraction unavailable; using compatibility decoder", error);

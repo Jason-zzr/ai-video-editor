@@ -26,7 +26,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run typecheck:host && npm run build",
+    "build:storage": "node packaging/build-storage.mjs",
+    "typecheck:host": "tsc -p apps/host/tsconfig.json"
   },
   "dependencies": {
     "@diffusionstudio/vits-web": "^1.0.3",
